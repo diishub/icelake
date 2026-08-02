@@ -1,0 +1,4 @@
+psu_admin:psu-admin
+psu_ingestion:nifi
+psu_analyst:analyst,superset
+psu_viewer:viewer

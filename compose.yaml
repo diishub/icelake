@@ -1,0 +1,280 @@
+name: ${COMPOSE_PROJECT_NAME:-psu-lakehouse}
+
+x-superset-common: &superset-common
+  build:
+    context: .
+    dockerfile: docker/superset/Dockerfile
+  restart: unless-stopped
+  environment: &superset-environment
+    SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+    SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+    SUPERSET_DATABASE_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/superset
+    PSU_ADMIN_USERNAME: ${PSU_ADMIN_USERNAME}
+    PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
+    PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
+    PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
+    PSU_VIEWER_USERNAME: ${PSU_VIEWER_USERNAME}
+    PSU_VIEWER_PASSWORD: ${PSU_VIEWER_PASSWORD}
+    POLARIS_CATALOG: ${POLARIS_CATALOG:-psu}
+  volumes:
+    - ./config/superset:/app/pythonpath:ro
+    - ./runtime/superset:/app/superset_home
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --data-checksums
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - ./runtime/postgres:/var/lib/postgresql
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/00-psu-databases.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-beta.8
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: :9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: :9001
+    ports:
+      - 9000:9000
+      - 9001:9001
+    volumes:
+      - ./runtime/rustfs:/data
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  bucket-setup:
+    image: amazon/aws-cli:2.36.8
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY}
+      AWS_ENDPOINT_URL: http://rustfs:9000
+      AWS_DEFAULT_REGION: us-west-2
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - aws s3api head-bucket --bucket "${RUSTFS_BUCKET}" 2>/dev/null || aws s3 mb "s3://${RUSTFS_BUCKET}"
+    depends_on:
+      rustfs:
+        condition: service_healthy
+
+  polaris-bootstrap:
+    image: apache/polaris-admin-tool:1.6.0
+    restart: "no"
+    environment:
+      POLARIS_REALM: ${POLARIS_REALM}
+      POLARIS_CLIENT_ID: ${POLARIS_CLIENT_ID}
+      POLARIS_CLIENT_SECRET: ${POLARIS_CLIENT_SECRET}
+      POLARIS_PERSISTENCE_TYPE: relational-jdbc
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_DATABASE_TYPE: postgresql
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/polaris
+      QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: /bin/sh
+    command: /bootstrap/bootstrap.sh
+    volumes:
+      - ./config/polaris/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  polaris:
+    image: apache/polaris:1.6.0
+    restart: unless-stopped
+    environment:
+      POLARIS_PERSISTENCE_TYPE: relational-jdbc
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_DATABASE_TYPE: postgresql
+      POLARIS_PERSISTENCE_RELATIONAL_JDBC_MAX_RETRIES: "5"
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/polaris
+      QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      POLARIS_REALM_CONTEXT_REALMS: ${POLARIS_REALM}
+      POLARIS_REALM_CONTEXT_REQUIRE_HEADER: "true"
+      POLARIS_BOOTSTRAP_CREDENTIALS: ${POLARIS_REALM},${POLARIS_CLIENT_ID},${POLARIS_CLIENT_SECRET}
+      AWS_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY}
+      QUARKUS_OTEL_SDK_DISABLED: "true"
+    ports:
+      - 127.0.0.1:8181:8181
+      - 127.0.0.1:8182:8182
+    depends_on:
+      polaris-bootstrap:
+        condition: service_completed_successfully
+      bucket-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:8182/q/health]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  polaris-setup:
+    image: alpine/curl:8.21.0
+    restart: "no"
+    environment:
+      POLARIS_REALM: ${POLARIS_REALM}
+      POLARIS_CLIENT_ID: ${POLARIS_CLIENT_ID}
+      POLARIS_CLIENT_SECRET: ${POLARIS_CLIENT_SECRET}
+      POLARIS_CATALOG: ${POLARIS_CATALOG}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET}
+    entrypoint: /bin/sh
+    command: /bootstrap/setup.sh
+    volumes:
+      - ./config/polaris/setup.sh:/bootstrap/setup.sh:ro
+    depends_on:
+      polaris:
+        condition: service_healthy
+
+  opa:
+    image: openpolicyagent/opa:1.17.0
+    restart: unless-stopped
+    command: [run, --server, --addr=0.0.0.0:8181, --log-level=info, /policies]
+    volumes:
+      - ./config/opa:/policies:ro
+
+  trino:
+    image: trinodb/trino:483
+    restart: unless-stopped
+    environment:
+      POLARIS_CLIENT_ID: ${POLARIS_CLIENT_ID}
+      POLARIS_CLIENT_SECRET: ${POLARIS_CLIENT_SECRET}
+      POLARIS_REALM: ${POLARIS_REALM}
+      POLARIS_CATALOG: ${POLARIS_CATALOG}
+    ports:
+      - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
+    volumes:
+      - ./config/trino:/etc/trino:ro
+      - ./runtime/trino:/var/trino/data
+    depends_on:
+      polaris-setup:
+        condition: service_completed_successfully
+      opa:
+        condition: service_started
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:8080/v1/info]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+  redis:
+    image: redis:7.4.5-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - ./runtime/redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  superset-init:
+    <<: *superset-common
+    restart: "no"
+    command: /app/pythonpath/bootstrap.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trino:
+        condition: service_healthy
+
+  superset:
+    <<: *superset-common
+    command: gunicorn --bind 0.0.0.0:8088 --workers 2 --timeout 120 "superset.app:create_app()"
+    ports:
+      - 8088:8088
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail http://localhost:8088/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  superset-mcp:
+    <<: *superset-common
+    command: superset mcp run --host 0.0.0.0 --port 5008
+    ports:
+      - 127.0.0.1:5008:5008
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1', 5008), 2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+    ports:
+      - 127.0.0.1:6333:6333
+      - 127.0.0.1:6334:6334
+    volumes:
+      - ./runtime/qdrant:/qdrant/storage
+
+  nifi:
+    image: apache/nifi:2.10.0
+    restart: unless-stopped
+    environment:
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
+      NIFI_WEB_HTTPS_PORT: "8443"
+      NIFI_WEB_PROXY_HOST: localhost:8443
+    ports:
+      - 127.0.0.1:8443:8443
+    volumes:
+      - ./data/incoming:/data/incoming:ro
+      - ./drivers:/opt/nifi/nifi-current/drivers:ro
+      - ./runtime/nifi/database_repository:/opt/nifi/nifi-current/database_repository
+      - ./runtime/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
+      - ./runtime/nifi/content_repository:/opt/nifi/nifi-current/content_repository
+      - ./runtime/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
+      - ./runtime/nifi/state:/opt/nifi/nifi-current/state
+      - ./runtime/nifi/logs:/opt/nifi/nifi-current/logs
+
+  psu-portal:
+    image: nginx:1.29.1-alpine
+    restart: unless-stopped
+    ports:
+      - 8085:80
+    volumes:
+      - ./portal:/usr/share/nginx/html:ro
+    depends_on:
+      - superset
+      - nifi

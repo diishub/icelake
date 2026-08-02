@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PSU Lakehouse Control Center</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; }
+      body { margin: 0; background: #f4f7fb; color: #17233c; }
+      header { padding: 42px max(24px, 7vw); background: #123a72; color: white; }
+      header p { max-width: 780px; line-height: 1.55; opacity: .9; }
+      main { padding: 30px max(24px, 7vw) 60px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+      .card { background: white; border: 1px solid #dbe3ee; border-radius: 14px; padding: 20px; box-shadow: 0 4px 16px #16385d12; }
+      .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+      .card p { min-height: 48px; color: #52627a; line-height: 1.45; }
+      a.button { display: inline-block; padding: 9px 13px; border-radius: 8px; background: #1769aa; color: white; text-decoration: none; }
+      table { width: 100%; border-collapse: collapse; background: white; }
+      th, td { padding: 12px; border: 1px solid #dbe3ee; text-align: left; }
+      section { margin-top: 32px; }
+      code { color: #7b245f; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>PSU Lakehouse Control Center</h1>
+      <p>One local open-source stack for governed ingestion, Apache Iceberg,
+        vector search, analytics and AI-assisted dashboards.</p>
+    </header>
+    <main>
+      <div class="grid">
+        <article class="card"><h2>Users and roles</h2><p>Manage local test users and BI roles in Superset Security.</p><a class="button" href="http://localhost:8088/users/list/">Manage users</a></article>
+        <article class="card"><h2>Dashboards and AI</h2><p>Explore curated Iceberg data and manage dashboards in Superset.</p><a class="button" href="http://localhost:8088">Open Superset</a></article>
+        <article class="card"><h2>Ingestion</h2><p>Design CSV and database ingestion flows with Apache NiFi.</p><a class="button" href="https://localhost:8443/nifi">Open NiFi</a></article>
+        <article class="card"><h2>Object storage</h2><p>Inspect local Iceberg objects and source documents in RustFS.</p><a class="button" href="http://localhost:9001">Open RustFS</a></article>
+        <article class="card"><h2>Vector index</h2><p>Inspect governed document-vector collections in Qdrant.</p><a class="button" href="http://localhost:6333/dashboard">Open Qdrant</a></article>
+        <article class="card"><h2>SQL engine</h2><p>Inspect Trino queries. Data operations are authorized by OPA.</p><a class="button" href="http://localhost:8086">Open Trino</a></article>
+      </div>
+      <section>
+        <h2>PSU role boundaries</h2>
+        <table>
+          <thead><tr><th>Role</th><th>Purpose</th><th>Iceberg access</th></tr></thead>
+          <tbody>
+            <tr><td><code>psu_admin</code></td><td>Platform administration</td><td>All</td></tr>
+            <tr><td><code>psu_ingestion</code></td><td>Managed ingestion</td><td>Write raw, curated, documents</td></tr>
+            <tr><td><code>psu_analyst</code></td><td>Analysis and dashboards</td><td>Read curated and published</td></tr>
+            <tr><td><code>psu_viewer</code></td><td>Published consumption</td><td>Read published</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

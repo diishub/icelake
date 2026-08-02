@@ -1,0 +1,9 @@
+.env
+.DS_Store
+resume.sh
+runtime/**
+!runtime/**/.gitkeep
+drivers/*.jar
+data/incoming/csv/*
+data/incoming/documents/*
+!data/incoming/**/.gitkeep
