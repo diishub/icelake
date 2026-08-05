@@ -168,6 +168,8 @@ services:
       POLARIS_CLIENT_SECRET: ${POLARIS_CLIENT_SECRET}
       POLARIS_REALM: ${POLARIS_REALM}
       POLARIS_CATALOG: ${POLARIS_CATALOG}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
     ports:
       - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
     volumes:
@@ -259,7 +261,7 @@ services:
     ports:
       - 127.0.0.1:8443:8443
     volumes:
-      - ./data/incoming:/data/incoming:ro
+      - ./data/incoming:/data/incoming
       - ./drivers:/opt/nifi/nifi-current/drivers:ro
       - ./runtime/nifi/database_repository:/opt/nifi/nifi-current/database_repository
       - ./runtime/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
