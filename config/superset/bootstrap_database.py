@@ -16,9 +16,9 @@ with app.app_context():
     database.sqlalchemy_uri = "trino://superset@trino:8080/polaris"
     database.impersonate_user = True
     database.expose_in_sqllab = True
-    database.allow_ctas = False
-    database.allow_cvas = False
-    database.allow_dml = False
+    database.allow_ctas = True
+    database.allow_cvas = True
+    database.allow_dml = True
     db.session.commit()
 
     print("Superset database PSU Iceberg is configured with user impersonation")

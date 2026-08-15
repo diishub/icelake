@@ -6,4 +6,5 @@ runtime/**
 drivers/*.jar
 data/incoming/csv/*
 data/incoming/documents/*
+data/incoming/landing/*
 !data/incoming/**/.gitkeep

@@ -1,0 +1,18 @@
+﻿id,timestamp,user_id,service,latency_ms,status,records_processed,quality_score
+101,2026-08-01 09:30:00,usr_001,dotblue-llm,120.5,SUCCESS,5,98.5%
+102,01/08/2026 10:15,usr_002,data-pipeline,340.0ms,success,1200,92.0
+103,2026/08/02,USR_003,data-lake,,FAILED,-10,75.0%
+104,"August 2, 2026",usr_004,dotblue-llm,210.0,SUCCESS,4,
+101,2026-08-01 09:30:00,usr_001,dotblue-llm,120.5,SUCCESS,5,98.5%
+105,2026.08.03 14:22:10, usr_005 ,DATA-PIPELINE,999999.0,WARNING,450,88.4%
+106,N/A,usr_006,dotblue-llm,150,SUCCESS,2,99.0%
+107,2026-08-04,,data-lake-ingestion,450.2,SUCCESS,,UNKNOWN
+108,2026-08-04 18:00:00,usr_008,  dotblue-llm  ,invalid_number,SUCCESS,1,95.5%
+109,05-08-2026,usr_009,api-gateway,85.4,ERROR,0,60.0%
+110,2026-08-05 20:10:00,usr_010,data-pipeline,310.0,SUCCESS,800,91.2%
+110,2026-08-05 20:10:00,usr_010,data-pipeline,310.0,success,800,91.2%
+111,2026-08-06 08:00:00,usr_011,dotblue-llm,-50.0,SUCCESS,3,100.0%
+112,2026-08-06 09:12:00,usr_012,,180.0,,25,87.0%
+113,06/08/2026 09:30:00,usr_013,data-lake,520.0ms,SUCCESS,50000,94.8%
+114,INVALID_DATE,usr_014,dotblue-llm,110.0,SUCCESS,two,99.1%
+115,2026-08-06 10:00:00,usr_015,data-pipeline,,PENDING,,
