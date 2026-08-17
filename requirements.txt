@@ -1,0 +1,17 @@
+# CPT corpus ingestion pipeline dependencies (host-side scripts)
+# These are independent of the Superset image (docker/superset/Dockerfile).
+
+# HTTP / scraping
+requests>=2.32
+beautifulsoup4>=4.12
+curl-cffi>=0.7          # TLS impersonation to bypass Cloudflare bot-blocking
+playwright>=1.45        # one-time headless login (SPA + Cloudflare). After pip install, run:
+                        #   playwright install chromium
+
+# Data
+pyarrow>=17            # parquet writer -> RustFS (first use of pyarrow in repo)
+pandas>=2.2            # also used by multimodal_pipeline.py
+datasketch>=1.6        # MinHash LSH near-duplicate dedup
+
+# Config
+python-dotenv>=1.0     # load .env

@@ -1,0 +1,4 @@
+order_id,customer_name,product,quantity,unit_price,total_amount,order_date
+8001,Somchai Jaidee,Data Analytics License,2,15000.00,30000.00,2026-02-01
+8002,Suda Rakthai,Cloud Storage Subscription,5,2000.00,10000.00,2026-02-02
+8003,Kitti Meesuk,AI Engine API Credits,1,50000.00,50000.00,2026-02-03

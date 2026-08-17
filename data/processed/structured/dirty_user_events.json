@@ -1,0 +1,7 @@
+[
+  {"id": "EVT-101", "timestamp": "2026-08-05 12:00:00", "user_id": "usr_100", "service": "DOTBLUE-LLM", "latency_ms": "150.5ms", "status": "success", "score": "95.5%"},
+  {"id": "EVT-102", "timestamp": "05/08/2026 12:30", "user_id": "usr_101", "service": "DATA-PIPELINE", "latency_ms": "999999.0", "status": "SUCCESS", "score": "invalid_number"},
+  {"id": "EVT-101", "timestamp": "2026-08-05 12:00:00", "user_id": "usr_100", "service": "DOTBLUE-LLM", "latency_ms": "150.5ms", "status": "success", "score": "95.5%"},
+  {"id": "", "timestamp": "2026-08-05 13:00:00", "user_id": "usr_102", "service": "api-gateway", "latency_ms": "80.0", "status": "SUCCESS", "score": "88.0"},
+  {"id": "EVT-103", "timestamp": "2026-08-05 14:00:00", "user_id": "usr_103", "service": "  dotblue-llm  ", "latency_ms": "200.0", "status": "SUCCESS", "score": "90.0"}
+]

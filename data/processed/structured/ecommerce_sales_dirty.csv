@@ -1,0 +1,8 @@
+customer_code,purchase_date,store_branch,item_count,net_amount_usd,customer_rating_score
+CUST-001,2026-08-01 10:00:00,BKK-01,3,150.50$,4.8
+CUST-002,01/08/2026 11:30,CNX-02,5,320.00,4.2
+CUST-003,2026-08-02,,invalid_count,999999.0,3.5
+CUST-004,"August 2, 2026",  HKT-01  ,1,75.20,
+CUST-001,2026-08-01 10:00:00,BKK-01,3,150.50$,4.8
+CUST-005,N/A,BKK-02,2,210.00,4.9
+CUST-006,2026-08-03 14:00:00,CNX-01,four,180.00,4.5

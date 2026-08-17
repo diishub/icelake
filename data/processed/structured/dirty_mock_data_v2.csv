@@ -1,0 +1,16 @@
+session_id,created_at,user_email,module,prompt_tokens,cost_usd,is_flagged,user_rating
+S-1001,2026-08-01T08:12:00Z,POND@psu.ac.th,dotblue_llm,450,$0.0090,FALSE, 5 
+S-1002,01-08-2026 08:15,pond@psu.ac.th,  dotblue_llm  ,"1,200",$0.0240,False,5
+S-1003,2026/08/01 09:00:15,student01@gmail.com,data_pipeline,,0.0000,0,
+S-1004,02/08/2026,  staff_admin@psu.ac.th ,DATA_LAKE,350.0,$0.0070,NO,4.0
+S-1001,2026-08-01T08:12:00Z,POND@psu.ac.th,dotblue_llm,450,$0.0090,FALSE, 5 
+S-1005,2026.08.02 11:45,null,dotblue_llm,-999,FREE,TRUE,1
+S-1006,"Aug 3, 2026",user_dev@psu.ac.th,data_pipeline,5500,$0.1100,true,99
+S-1007,2026-08-03 14:00:00,user_dev@psu.ac.th,DATA_PIPELINE,5500,$0.1100,1,4
+S-1008,2026-08-04 15:30:22,researcher@psu.ac.th,,N/A,,False,3.5
+S-1009,04-Aug-2026,guest_user,dotblue_llm,220,$0.0044,FALSE,none
+S-1010,2026-08-05 10:10:00,test_user#123@psu.ac.th,dotblue_llm,150 tokens,$0.0030,No,5
+S-1011,2026-08-05 12:00:00,student02@psu.ac.th,data_lake,0,$0.0000,UNKNOWN,NaN
+S-1012,BAD_TIMESTAMP,admin@psu.ac.th,dotblue_llm,310,$0.0062,YES,2
+S-1013,2026-08-06 09:00:00,POND@psu.ac.th,dotblue_llm,890,$0.0178,false,5
+S-1014,2026-08-06 09:30:00,pond@psu.ac.th,data_pipeline,12500,$0.2500,FALSE,4.5

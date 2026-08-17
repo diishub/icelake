@@ -1,0 +1,234 @@
+<title>คำร้องเซิร์ฟเวอร์ Lakehouse × CPT</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --ground:#F6F5F2; --surface:#FFFFFF; --ink:#1A1C20; --muted:#5A6068;
+  --accent:#0E6E64; --accent-soft:#E3EFEC; --cpt:#B8722C; --cpt-soft:#F3E7D7;
+  --border:#DDD9D2; --rule:#E8E4DC; --code:#3A3F45;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#14171A; --surface:#1B1F23; --ink:#E8E6E1; --muted:#9AA0A8;
+    --accent:#3FB8AC; --accent-soft:#1A2E2C; --cpt:#D89A4E; --cpt-soft:#2A2118;
+    --border:#2C3137; --rule:#262B30; --code:#C9CDD2;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#14171A; --surface:#1B1F23; --ink:#E8E6E1; --muted:#9AA0A8;
+  --accent:#3FB8AC; --accent-soft:#1A2E2C; --cpt:#D89A4E; --cpt-soft:#2A2118;
+  --border:#2C3137; --rule:#262B30; --code:#C9CDD2;
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans Thai","Noto Sans Thai","Sarabun","Segoe UI",system-ui,-apple-system,sans-serif;
+  line-height:1.6; font-size:0.975rem;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:880px; margin:0 auto; padding:48px 28px 96px}
+.eyebrow{
+  font-size:0.72rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 10px;
+}
+h1{
+  font-size:2.05rem; line-height:1.2; font-weight:700; letter-spacing:-0.01em;
+  margin:0 0 6px; text-wrap:balance;
+}
+.lede{font-size:1.02rem; color:var(--muted); margin:0 0 28px; max-width:60ch}
+.meta{
+  display:grid; gap:10px 24px; grid-template-columns:auto 1fr;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:18px 20px; margin:0 0 8px; font-size:0.9rem;
+}
+.meta dt{color:var(--muted); margin:0; font-weight:500}
+.meta dd{margin:0; font-weight:600}
+.fill{color:var(--muted); font-weight:400; font-style:italic}
+section{margin:0; padding:40px 0 0; border-top:1px solid var(--rule)}
+h2{font-size:1.3rem; margin:0 0 4px; font-weight:700; letter-spacing:-0.01em}
+h2 .n{color:var(--accent); font-variant-numeric:tabular-nums; margin-right:10px}
+.ssub{color:var(--muted); font-size:0.88rem; margin:0 0 18px}
+h3{font-size:1rem; font-weight:600; margin:24px 0 8px; color:var(--ink)}
+p{margin:0 0 12px}
+.case-row{display:grid; gap:14px; grid-template-columns:1fr 1fr; margin:16px 0 8px}
+.case{
+  border:1px solid var(--border); border-radius:8px; padding:16px 18px;
+  background:var(--surface); border-left:3px solid var(--accent);
+}
+.case.cpt{border-left-color:var(--cpt)}
+.case .tag{
+  font-size:0.68rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
+  padding:3px 8px; border-radius:4px; display:inline-block; margin-bottom:10px;
+}
+.case.lh .tag{background:var(--accent-soft); color:var(--accent)}
+.case.cpt .tag{background:var(--cpt-soft); color:var(--cpt)}
+.case p{margin:0 0 8px; font-size:0.86rem}
+.case p:last-child{margin-bottom:0}
+.case .lbl{font-weight:600; color:var(--ink)}
+table{
+  width:100%; border-collapse:collapse; margin:6px 0 18px;
+  font-size:0.86rem; background:var(--surface);
+  border:1px solid var(--border); border-radius:8px; overflow:hidden;
+}
+.table-scroll{overflow-x:auto; margin:6px 0 18px}
+.table-scroll table{margin:0}
+th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--rule); vertical-align:top}
+th{font-weight:600; font-size:0.72rem; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); background:var(--surface)}
+td:first-child{font-weight:600; color:var(--muted); width:24%}
+tbody tr:last-child td{border-bottom:none}
+td .v{font-family:ui-monospace,"Cascadia Code","Consolas",monospace; font-size:0.84rem; color:var(--code)}
+.col-lh{color:var(--accent)}
+.col-cpt{color:var(--cpt)}
+thead .col-lh,thead .col-cpt{font-size:0.74rem; text-transform:uppercase; letter-spacing:0.06em}
+ul{margin:0 0 14px; padding-left:20px}
+li{margin:0 0 6px; font-size:0.9rem}
+.rec{
+  background:var(--accent-soft); border:1px solid var(--accent);
+  border-radius:8px; padding:18px 20px; margin:18px 0;
+}
+.rec h3{margin:0 0 8px; color:var(--accent)}
+.rec p{margin:0 0 8px; font-size:0.88rem}
+.rec p:last-child{margin:0}
+.small{font-size:0.82rem; color:var(--muted)}
+hr{border:none; border-top:1px solid var(--rule); margin:8px 0}
+.k{font-family:ui-monospace,monospace; font-size:0.84rem; background:var(--ground); padding:1px 5px; border-radius:3px}
+</style>
+<div class="wrap">
+
+<p class="eyebrow">เอกสารคำร้องขออนุมัติเซิร์ฟเวอร์</p>
+<h1>คำร้องขออนุมัติการใช้งานเซิร์ฟเวอร์</h1>
+<p class="lede">โครงการ PSU Open Lakehouse — ประเมินทรัพยากรเซิร์ฟเวอร์แยก 2 เคส: ระบบคลังข้อมูล (Lakehouse) และการเทรนโมเดลภาษาไทย (CPT) พร้อมสเปกเปรียบเทียบ โดยตัวเลขประมาณการจากการวัดจริงของระบบ prototype บนเครื่องส่วนตัว</p>
+
+<dl class="meta">
+  <dt>ชื่อโครงการ</dt><dd>PSU Open Lakehouse — ระบบคลังข้อมูลเปิด + ไปป์ไลน์เตรียมคอร์ปัส Continuous Pretraining</dd>
+  <dt>ผู้ขอระบบ</dt><dd><span class="fill">[ชื่อผู้ขอ]</span> — นักพัฒนาคลังข้อมูล, <span class="fill">[ภาควิชา/คณะ]</span> มหาวิทยาลัยสงขลานครินทร์</dd>
+  <dt>ติดต่อ</dt><dd><span class="fill">[เบอร์โทร / อีเมล]</span></dd>
+  <dt>วันที่ส่งเอกสาร</dt><dd><span class="fill">[วันที่ยื่นคำขอ]</span></dd>
+  <dt>ระยะเวลาที่ต้องการ</dt><dd>เริ่มต้น <span class="fill">[วันที่]</span> เป็นระบบถาวร (Lakehouse) + ช่วงเทรนตามรอบ (CPT)</dd>
+</dl>
+
+<section>
+<h2><span class="n">2.</span>วัตถุประสงค์และความจำเป็น</h2>
+<p class="ssub">แยกตามเคสเพราะเป็น workload คนละแบบ มีความต้องการทางเทคนิคต่างกันโดยสิ้นเชิง</p>
+
+<div class="case-row">
+  <div class="case lh">
+    <span class="tag">เคส A · Lakehouse</span>
+    <p><span class="lbl">ปัญหาปัจจุบัน:</span> รัน prototype บนเครื่องส่วนตัว (Windows 11, RAM 13.9 GB) ซึ่ง Docker Desktop/WSL2 กินทรัพยากรเกือบหมด เหลือ RAM ว่างเพียง ~1.6 GB ไม่เพียงพอสำหรับไปป์ไลน์ขนาด 1 พันล้านตัวอักษร (เคย Out-of-Memory ระหว่างทำงาน) ไม่สามารถรับผู้ใช้หลายคนพร้อมกันได้ ไม่มีการสำรองข้อมูล และไม่เสถียรพอที่จะเปิดบริการ 24/7</p>
+    <p><span class="lbl">เป้าหมาย:</span> เป็น Data Lakehouse Server ประจำ ประกอบด้วย RustFS (object storage) + Trino/Iceberg (query engine) + Superset (dashboard) + NiFi (ingestion) + Qdrant (vector/RAG) รันต่อเนื่อง 24/7 รองรับนักศึกษา/อาจารย์ query และดูแดชบอร์ดพร้อมกัน</p>
+    <p><span class="lbl">ความสำคัญ:</span> หากไม่อนุมัติ จะไม่สามารถเปิดบริการคลังข้อมูลให้สาขา/คณะใช้งานได้ งานวิจัย analytics และการเตรียมคอร์ปัส CPT ต้องดำเนินบนเครื่องส่วนตัวที่ไม่เสถียนและไม่รองรับผู้ใช้หลายคน</p>
+  </div>
+  <div class="case cpt">
+    <span class="tag">เคส B · CPT</span>
+    <p><span class="lbl">ปัญหาปัจจุบัน:</span> ไม่มีฮาร์ดแวร์ GPU สำหรับการเทรน LLM เครื่องส่วนตัวไม่มี GPU เลย ไม่สามารถทำ Continuous Pretraining บนคอร์ปัสภาษาไทย (ปัจจุบันมี ~1 พันล้านตัวอักษร ≈ 891 ล้าน token) ได้</p>
+    <p><span class="lbl">เป้าหมาย:</span> เป็น Training Server สำหรับ CPT ต่อจาก base LLM ที่มีอยู่ เทรน/ปรับแต่งโมเดลภาษาไทยบนคอร์ปัสที่เตรียมไว้ เป็นการใช้งานเป็นช่วงๆ ตามรอบการทดลอง (ไม่ใช่ 24/7)</p>
+    <p><span class="lbl">ความสำคัญ:</span> หากไม่อนุมัติ จะไม่สามารถสร้างโมเดลภาษาไทยที่ผ่านการ pretrain ต่อเนื่องได้ ซึ่งเป็นเป้าหมายหลักของโครงการ และเป็น output ที่จะนำไปตีพิมพ์/ใช้งานในงานวิจัย</p>
+  </div>
+</div>
+</section>
+
+<section>
+<h2><span class="n">3.</span>คุณสมบัติทางเทคนิคที่ต้องการ</h2>
+<p class="ssub">เคส A (Lakehouse) = ระบบประจำรองรับผู้ใช้หลายคน · เคส B (CPT) = เครื่องเทรน GPU ระดับงานวิจัย</p>
+
+<h3>3.1 ตารางเปรียบเทียบสเปก</h3>
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr><th>รายการ</th><th class="col-lh">เคส A · Lakehouse</th><th class="col-cpt">เคส B · CPT (Training)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>ประเภทระบบ</td>
+      <td>On-Premise <span class="small">(หรือ Cloud bare-metal)</span></td>
+      <td>Cloud GPU instance <span class="small">(หรือ On-Prem ถ้ามี GPU)</span></td></tr>
+    <tr><td>ระบบปฏิบัติการ</td>
+      <td><span class="v">Ubuntu 24.04 LTS</span></td>
+      <td><span class="v">Ubuntu 24.04 LTS</span></td></tr>
+    <tr><td>CPU</td>
+      <td><span class="v">8–16 cores</span></td>
+      <td><span class="v">8–16 cores</span> <span class="small">(สำหรับ data prep/tokenize)</span></td></tr>
+    <tr><td>RAM</td>
+      <td><span class="v">32 GB</span> <span class="small">(stack ใช้จริง ~3.5 GB resident + Trino heap 4 GB + พื้นที่ buffer)</span></td>
+      <td><span class="v">64–128 GB</span> <span class="small">(ขึ้นกับขนาด model — 7B ต้อง ≥64 GB)</span></td></tr>
+    <tr><td>Storage</td>
+      <td><span class="v">1 TB SSD</span> <span class="small">(ขยายได้; corpus+catalog+vectors)</span></td>
+      <td><span class="v">500 GB – 1 TB SSD</span> <span class="small">(corpus + weight + checkpoint)</span></td></tr>
+    <tr><td>GPU</td>
+      <td><span class="v">ไม่ต้องการ</span></td>
+      <td><span class="v">1× A100 80 GB</span> (full CPT 7B) <br><span class="v">หรือ 1× RTX 4090 24 GB</span> (LoRA/QLoRA 1–3B)</td></tr>
+    <tr><td>Network</td>
+      <td><span class="v">1 Gbps</span></td>
+      <td><span class="v">1 Gbps</span> <span class="small">(ดาวน์โหลด corpus/weight)</span></td></tr>
+    <tr><td>ความปลอดภัย</td>
+      <td>เปิดเฉพาะ reverse proxy <span class="k">:443</span> + SSH; ทุก service หลัง firewall; TLS ผ่าน Let's Encrypt</td>
+      <td>จำกัดเฉพาะ SSH + Jupyter; ไม่เปิดสู่สาธารณะ</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>3.2 ที่มาของตัวเลข (จากการวัดจริงของ prototype)</h3>
+<ul>
+  <li><span class="lbl">Lakehouse — RAM:</span> วัดการกิน RAM จริงของ container ทั้ง stack ขณะรัน = ~3.5 GiB resident, ฝ่า heap ceiling ~8–10 GiB (Trino <span class="k">-Xmx2G</span> + query memory 2 GB/node, NiFi JVM ~1.3 GiB). 32 GB คือจุดสมดุลที่รันได้สบาย + มี buffer กัน OOM</li>
+  <li><span class="lbl">Lakehouse — Disk:</span> คอร์ปัส 1 พันล้านตัวอักษร = parquet zstd 475 MB; catalog Postgres 77 MB; vectors Qdrant 201 MB → 1 TB รองรับการเติบโต 1–2 ปี</li>
+  <li><span class="lbl">CPT — GPU:</span> โมเดล 7B fp16 = weight ~14 GB; full fine-tune ต้องการ ~4× รวม optimizer state ≈ 56 GB → ต้อง A100 80 GB; LoRA/QLoRA ลดเหลือ ~24 GB → พอกับ RTX 4090</li>
+  <li><span class="lbl">CPT — token:</span> corpus 1B ตัวอักษร = 891 ล้าน token (วัดจริงด้วย tokenizer แบบทั่วไป) หรือ ~400 ล้าน token (ถ้าใช้ tokenizer เฉพาะไทย) — ปริมาณเพียงพอสำหรับ CPT ระดับทดลอง</li>
+</ul>
+</section>
+
+<section>
+<h2><span class="n">4.</span>การประมาณการใช้งานและการเติบโต</h2>
+
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr><th>รายการ</th><th class="col-lh">เคส A · Lakehouse</th><th class="col-cpt">เคส B · CPT</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>ผู้ใช้เฉลี่ย</td>
+      <td>5–15 คน/วัน <span class="small">(นักศึกษา + อาจารย์ query ผ่าน Superset/Trino)</span></td>
+      <td>1–2 คน <span class="small">(นักวิจัยที่เทรน)</span></td></tr>
+    <tr><td>ช่วงพีค</td>
+      <td>3–5 concurrent <span class="small">(ช่วงเรียน/ส่งงาน)</span></td>
+      <td>1 job รันต่อเนื่อง <span class="small">(multi-day training run)</span></td></tr>
+    <tr><td>การเติบโตข้อมูล</td>
+      <td>~50% ต่อปี <span class="small">(เพิ่ม corpus + ตาราง Iceberg + vectors)</span> → 1 TB รองรับ 1–2 ปี แล้วขยาย</td>
+      <td>ขยาย corpus เป็น 5–10 พันล้านตัวอักษร; โมเดลใหญ่ขึ้น → GPU เพิ่มตามรอบ</td></tr>
+    <tr><td>รูปแบบการใช้งาน</td>
+      <td>ต่อเนื่อง 24/7</td>
+      <td>เป็นช่วง 1–4 สัปดาห์/รอบทดลอง <span class="small">(ไม่ต้อง 24/7 ตลอดปี)</span></td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2><span class="n">5.</span>ระยะเวลาและงบประมาณ</h2>
+
+<div class="case-row">
+  <div class="case lh">
+    <span class="tag">เคส A · Lakehouse</span>
+    <p><span class="lbl">ระยะเวลา:</span> ถาวร — เปิดบริการตลอดโครงการและหลังโครงการสำเร็จ</p>
+    <p><span class="lbl">งบ On-Prem (แนะนำ):</span> เครื่อง ~50,000 บาท (32 GB RAM / 16 core / 1 TB SSD) จ่ายครั้งเดียว + ค่าไฟ/อินเทอร์เน็ตรายเดือน</p>
+    <p><span class="lbl">งบ Cloud ทดแทน:</span> ~$150/เดือน (~5,000 บาท/เดือน)</p>
+  </div>
+  <div class="case cpt">
+    <span class="tag">เคส B · CPT</span>
+    <p><span class="lbl">ระยะเวลา:</span> ช่วงเทรน 1–4 สัปดาห์ต่อรอบ ทดลอง ไม่ต้องรัน 24/7 ตลอดปี</p>
+    <p><span class="lbl">งบ GPU cloud (1× A100 80 GB):</span> ~$1.5–2/hr → 1 สัปดาห์ ~$250–340 (~8,000–12,000 บาท/รอบ)</p>
+    <p><span class="lbl">ทางเลือกประหยัด (1× RTX 4090):</span> ~$0.4/hr → 1 สัปดาห์ ~$70 (~2,300 บาท/รอบ) สำหรับ LoRA</p>
+  </div>
+</div>
+
+<div class="rec">
+  <h3>ข้อเสนอแนะ</h3>
+  <p><span class="lbl">แยกเครื่อง:</span> แนะนำให้ Lakehouse และ CPT เป็นคนละเครื่อง — Lakehouse ราคาถูกและต้องรัน 24/7 (On-Prem คุ้มกว่า), CPT แพงแต่ใช้เป็นช่วงๆ (เช่า GPU cloud ตามรอบคุ้มกว่าซื้อ GPU ไว้รอ)</p>
+  <p><span class="lbl">ลำดับความสำคัญ:</span> หากต้องเลือกอนุมัติอย่างเดียวก่อน — ขอเคส A (Lakehouse) ก่อน เพราะเป็นฐานระบบที่รองรับผู้ใช้หลายคน ส่วน CPT สามารถเช่า GPU cloud ทดแทนได้ในภายหลัง</p>
+  <p><span class="lbl">การย้ายจาก prototype:</span> prototype ปัจจุบันรันบน Windows + Docker Desktop ไม่เหมาะสำหรับ production — เมื่อได้เซิร์ฟเวอร์ Linux แล้วย้ายด้วย <span class="k">compose.yaml</span> เดิมได้ทันที (มี healthcheck + restart policy พร้อมแล้ว)</p>
+</div>
+
+<hr>
+<p class="small">หมายเหตุ: ตัวเลขทรัพยากรประมาณจากการวัดจริงของ prototype บนเครื่องส่วนตัว (RAM/CPU/Disk usage, per-container memory, corpus size, token count) เมื่อ ส.ค. 2026 พร้อมสเปก stack: Postgres, RustFS, Trino, Superset, NiFi, Polaris, Qdrant, Redis, OPA. ส่วนที่กรอก <span class="fill">[ในวงเล็บ]</span> ให้ผู้ขอระบุเองก่อนส่งเอกสาร</p>
+</section>
+
+</div>

@@ -1,0 +1,11 @@
+PSU Multimodal Data Lakehouse Governance Policy
+Version: 1.0 (2026)
+
+1. Executive Overview:
+This document outlines the security, data cataloging, and access control policies for Prince of Songkla University (PSU) Data Lakehouse platform. All incoming structured datasets and unstructured media objects must be indexed into Apache Iceberg metadata catalogs.
+
+2. Access Control:
+Data access is governed via Open Policy Agent (OPA) integration with Trino. Roles are divided into Admin, Analyst, and Viewer tiers.
+
+3. Unstructured Media Archiving:
+Documents, images, and audio files are uploaded directly to RustFS S3 buckets, with feature embeddings indexed into Qdrant Vector Database.

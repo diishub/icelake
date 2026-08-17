@@ -1,0 +1,11 @@
+﻿eval_id,prompt_category,user_prompt,model_version,response_time_sec,token_count,relevance_score,factual_accuracy,eval_status
+EVAL-001,Academic Advising,ขอทราบขั้นตอนการลงทะเบียนเรียนเพิ่ม-ถอน ของมหาวิทยาลัยสงขลานครินทร์,dotblue-v1.2,1.25,342,4.8,True,APPROVED
+EVAL-002,Code Generation,เขียน Python script สำหรับ ETL ข้อมูลจาก PostgreSQL ไปยัง Data Lake,dotblue-v1.2,2.8,680,4.9,True,APPROVED
+EVAL-003,General Knowledge,สรุปยุทธศาสตร์ดิจิทัลขององค์กรปี 2026 ให้สั้นๆ ใน 3 ข้อ,dotblue-v1.1,0.95,210,4.2,True,APPROVED
+EVAL-004,Document Summarization,สรุปรายงานการประชุมสภาผู้แทนประจำเดือนกุมภาพันธ์,dotblue-v1.2,4.1,1120,3.5,False,REJECTED
+EVAL-005,Translation,แปลข้อความประกาศทุนวิจัยนี้เป็นภาษาอังกฤษ,dotblue-v1.2,1.5,450,4.7,True,APPROVED
+EVAL-006,Data Analysis,ช่วยวิเคราะห์แนวโน้มจำนวนนักศึกษาที่เข้าใช้บริการ AI ในไตรมาสที่ผ่านมา,dotblue-v1.2,3.15,890,4.6,True,APPROVED
+EVAL-007,Academic Advising,สอบถามกำหนดการวันซ้อมรับปริญญาประจำปีการศึกษา 2568,dotblue-v1.0,1.1,180,2.1,False,REJECTED
+EVAL-008,System Support,วิธีแก้ไขปัญหาเมื่อไม่สามารถเชื่อมต่อ VPN มหาวิทยาลัยได้,dotblue-v1.2,1.05,290,4.5,True,APPROVED
+EVAL-009,Code Generation,เขียน SQL Query ดึงข้อมูลนักศึกษาที่เกรดเฉลี่ยมากกว่า 3.5 จาก Data Lake,dotblue-v1.2,1.85,510,4.9,True,APPROVED
+EVAL-010,Creative Writing,ช่วยร่างสโลแกนเชิญชวนเข้าแข่งขัน PSU Hat Yai Nature Run,dotblue-v1.1,0.88,150,4.3,True,APPROVED
