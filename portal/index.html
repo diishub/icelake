@@ -1,53 +1,244 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PSU Lakehouse Control Center</title>
-    <style>
-      :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; }
-      body { margin: 0; background: #f4f7fb; color: #17233c; }
-      header { padding: 42px max(24px, 7vw); background: #123a72; color: white; }
-      header p { max-width: 780px; line-height: 1.55; opacity: .9; }
-      main { padding: 30px max(24px, 7vw) 60px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
-      .card { background: white; border: 1px solid #dbe3ee; border-radius: 14px; padding: 20px; box-shadow: 0 4px 16px #16385d12; }
-      .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
-      .card p { min-height: 48px; color: #52627a; line-height: 1.45; }
-      a.button { display: inline-block; padding: 9px 13px; border-radius: 8px; background: #1769aa; color: white; text-decoration: none; }
-      table { width: 100%; border-collapse: collapse; background: white; }
-      th, td { padding: 12px; border: 1px solid #dbe3ee; text-align: left; }
-      section { margin-top: 32px; }
-      code { color: #7b245f; }
-    </style>
+    <meta name="description" content="PSU Data Hub ศูนย์กลางข้อมูลและรายงานสำหรับมหาวิทยาลัยสงขลานครินทร์">
+    <title>PSU Data Hub</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/app.js" defer></script>
   </head>
   <body>
-    <header>
-      <h1>PSU Lakehouse Control Center</h1>
-      <p>One local open-source stack for governed ingestion, Apache Iceberg,
-        vector search, analytics and AI-assisted dashboards.</p>
-    </header>
-    <main>
-      <div class="grid">
-        <article class="card"><h2>Users and roles</h2><p>Manage local test users and BI roles in Superset Security.</p><a class="button" href="http://localhost:8088/users/list/">Manage users</a></article>
-        <article class="card"><h2>Dashboards and AI</h2><p>Explore curated Iceberg data and manage dashboards in Superset.</p><a class="button" href="http://localhost:8088">Open Superset</a></article>
-        <article class="card"><h2>Ingestion</h2><p>Design CSV and database ingestion flows with Apache NiFi.</p><a class="button" href="https://localhost:8443/nifi">Open NiFi</a></article>
-        <article class="card"><h2>Object storage</h2><p>Inspect local Iceberg objects and source documents in RustFS.</p><a class="button" href="http://localhost:9001">Open RustFS</a></article>
-        <article class="card"><h2>Vector index</h2><p>Inspect governed document-vector collections in Qdrant.</p><a class="button" href="http://localhost:6333/dashboard">Open Qdrant</a></article>
-        <article class="card"><h2>SQL engine</h2><p>Inspect Trino queries. Data operations are authorized by OPA.</p><a class="button" href="http://localhost:8086">Open Trino</a></article>
+    <a class="skip-link" href="#main-content">ข้ามไปยังเนื้อหาหลัก</a>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="PSU Data Hub หน้าแรก">
+        <span class="brand-mark" aria-hidden="true">PSU</span>
+        <span class="brand-copy">
+          <strong>PSU Data Hub</strong>
+          <span>ศูนย์กลางข้อมูลมหาวิทยาลัย</span>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="เมนูหลัก">
+        <a href="#start">เริ่มใช้งาน</a>
+        <a href="#reports">รายงาน</a>
+        <a href="#help">ความช่วยเหลือ</a>
+      </nav>
+
+      <div class="service-status is-checking" id="report-status" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true">&#8203;</span>
+        <span class="status-copy">
+          <strong>กำลังตรวจระบบรายงาน</strong>
+          <small>รอสักครู่</small>
+        </span>
       </div>
-      <section>
-        <h2>PSU role boundaries</h2>
-        <table>
-          <thead><tr><th>Role</th><th>Purpose</th><th>Iceberg access</th></tr></thead>
-          <tbody>
-            <tr><td><code>psu_admin</code></td><td>Platform administration</td><td>All</td></tr>
-            <tr><td><code>psu_ingestion</code></td><td>Managed ingestion</td><td>Write raw, curated, documents</td></tr>
-            <tr><td><code>psu_analyst</code></td><td>Analysis and dashboards</td><td>Read curated and published</td></tr>
-            <tr><td><code>psu_viewer</code></td><td>Published consumption</td><td>Read published</td></tr>
-          </tbody>
-        </table>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span>PSU DATA HUB</span><span class="pilot-badge" data-pilot-label>Pilot</span></div>
+          <h1 id="hero-title">เริ่มจากงานที่ต้องทำ<br>ไม่ต้องเริ่มจากชื่อระบบ</h1>
+          <p class="hero-lead">ดูรายงาน ขอใช้ข้อมูล หรือเตรียมข้อมูลให้ทีมงานได้จากจุดเดียว คุณไม่จำเป็นต้องรู้จักเครื่องมือเบื้องหลังก่อนเริ่มใช้</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#start">เลือกสิ่งที่ฉันต้องการทำ</a>
+            <a class="button button-secondary" href="#demo-report">ลองดูตัวอย่าง 2 นาที</a>
+          </div>
+          <p class="login-note"><span aria-hidden="true">i</span> ช่วง Pilot จะมีหน้าล็อกอินรายงานอีกหนึ่งครั้งด้วยบัญชีที่ผู้ดูแลมอบให้</p>
+        </div>
+
+        <aside class="first-visit-card" aria-labelledby="first-visit-title">
+          <div class="first-visit-icon" aria-hidden="true">01</div>
+          <div>
+            <p class="card-kicker">เข้ามาครั้งแรก</p>
+            <h2 id="first-visit-title">ทำตามนี้ก่อน ไม่หลงแน่นอน</h2>
+          </div>
+          <ol class="mini-steps">
+            <li><span>1</span><p><strong>เลือกบทบาท</strong><small>ระบบจะจัดคำแนะนำให้ตรงกับงาน</small></p></li>
+            <li><span>2</span><p><strong>ดูตัวอย่าง</strong><small>รู้หน้าตาผลลัพธ์ก่อนเปิดระบบจริง</small></p></li>
+            <li><span>3</span><p><strong>เข้ารายงาน</strong><small>ใช้บัญชี Pilot ที่ได้รับจากผู้ดูแล</small></p></li>
+          </ol>
+        </aside>
+      </section>
+
+      <section class="plain-language-strip" aria-label="ขอบเขตของหน้าเริ่มต้น">
+        <div>
+          <span class="strip-icon" aria-hidden="true">✓</span>
+          <p><strong>หน้านี้เป็นทางเข้าหลักสำหรับผู้ใช้ทั่วไป</strong><span>เครื่องมือจัดเก็บ ประมวลผล และดูแลระบบทำงานอยู่เบื้องหลัง</span></p>
+        </div>
+        <p class="strip-side">สิทธิ์ข้อมูลจริงยังตรวจจากบัญชีของคุณทุกครั้ง</p>
+      </section>
+
+      <section class="section role-section" id="start" aria-labelledby="start-title">
+        <div class="section-heading">
+          <p class="section-number">01 · เริ่มจากตัวคุณ</p>
+          <h2 id="start-title">วันนี้คุณเข้ามาทำอะไร?</h2>
+          <p>เลือกเพื่อปรับคำแนะนำบนหน้านี้เท่านั้น การเลือกนี้ไม่เพิ่มหรือลดสิทธิ์ข้อมูลของคุณ</p>
+        </div>
+
+        <div class="role-layout">
+          <div class="role-picker" role="group" aria-label="เลือกบทบาทสำหรับคำแนะนำ">
+            <button class="role-option" type="button" data-role="viewer" aria-pressed="true">
+              <span class="role-icon" aria-hidden="true">▦</span>
+              <span><strong>ผู้บริหาร / ผู้ใช้รายงาน</strong><small>ต้องการดูตัวเลขและติดตามสถานการณ์</small></span>
+              <span class="role-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="role-option" type="button" data-role="analyst" aria-pressed="false">
+              <span class="role-icon" aria-hidden="true">⌁</span>
+              <span><strong>นักวิเคราะห์ข้อมูล</strong><small>ต้องการสำรวจข้อมูลและสร้างรายงาน</small></span>
+              <span class="role-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="role-option" type="button" data-role="steward" aria-pressed="false">
+              <span class="role-icon" aria-hidden="true">⇧</span>
+              <span><strong>เจ้าของข้อมูล / ผู้ประสานงาน</strong><small>ต้องการส่งหรือปรับปรุงข้อมูลของหน่วยงาน</small></span>
+              <span class="role-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="role-option" type="button" data-role="operator" aria-pressed="false">
+              <span class="role-icon" aria-hidden="true">◇</span>
+              <span><strong>ทีมแพลตฟอร์ม</strong><small>ดูแลบัญชี ท่อนำเข้า และสถานะระบบ</small></span>
+              <span class="role-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+
+          <article class="role-plan" aria-live="polite" aria-atomic="true">
+            <p class="role-plan-label" id="role-plan-label">ทางเริ่มต้นที่แนะนำ</p>
+            <h3 id="role-plan-title">เปิดรายงานที่ได้รับสิทธิ์</h3>
+            <p id="role-plan-description">เริ่มจากรายการรายงานที่เปิดให้คุณ ไม่ต้องเข้าเมนูสร้างกราฟหรือเขียนคำสั่งข้อมูล</p>
+            <ol class="role-plan-steps" id="role-plan-steps">
+              <li>เข้าสู่ระบบด้วยบัญชี Pilot</li>
+              <li>เลือกรายงานจากรายการที่เปิดได้</li>
+              <li>ตรวจเจ้าของข้อมูลและวันที่ปรับปรุง</li>
+            </ol>
+            <a class="button button-primary role-plan-action" id="role-plan-action" href="#reports">ไปยังรายงานของฉัน</a>
+            <p class="role-plan-footnote" id="role-plan-footnote">หากรายการว่าง ระบบไม่ได้เสีย แปลว่ายังไม่มีรายงานที่เผยแพร่ให้บัญชีนี้</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section reports-section" id="reports" aria-labelledby="reports-title">
+        <div class="section-heading section-heading-row">
+          <div>
+            <p class="section-number">02 · เห็นปลายทางก่อน</p>
+            <h2 id="reports-title">รายงานที่เข้าใจได้ตั้งแต่ครั้งแรก</h2>
+          </div>
+          <a class="text-link" href="#help">ถ้ารายงานไม่ขึ้น ต้องทำอย่างไร <span aria-hidden="true">→</span></a>
+        </div>
+
+        <div class="report-grid">
+          <article class="real-report-card">
+            <div class="report-card-topline">
+              <span class="report-symbol" aria-hidden="true">▤</span>
+              <span class="state-badge is-empty" id="published-state-badge">ยังไม่มีรายงานจริง</span>
+            </div>
+            <h3>รายงานที่บัญชีของฉันเปิดได้</h3>
+            <p id="published-state-message">เครื่อง Pilot รอบตั้งต้นยังไม่มีชุดข้อมูลที่ประกาศเผยแพร่ จึงอาจพบรายการว่างหลังล็อกอิน</p>
+            <div class="empty-guidance">
+              <strong>ถ้าเปิดแล้วเจอหน้าว่าง</strong>
+              <span>กลับมาหน้านี้ได้เลย ไม่ต้องลองกดเมนูเทคนิค ให้แจ้งชื่อรายงานหรือข้อมูลที่ต้องการแก่ทีมข้อมูล</span>
+            </div>
+            <a class="button button-dark" data-service-link="reports" href="#start">เข้าสู่ระบบรายงานจริง</a>
+          </article>
+
+          <article class="demo-report" id="demo-report" aria-labelledby="demo-title">
+            <div class="demo-header">
+              <div>
+                <p class="demo-eyebrow">ตัวอย่างหน้ารายงาน</p>
+                <h3 id="demo-title">ภาพรวมการรับข้อมูลจากหน่วยงาน</h3>
+              </div>
+              <span class="fictional-badge">ข้อมูลสมมติ 100%</span>
+            </div>
+
+            <div class="metric-row" aria-label="ตัวเลขตัวอย่าง">
+              <div class="metric"><span>หน่วยงานส่งแล้ว</span><strong>8 <small>/ 12</small></strong><em class="trend-up">+2 สัปดาห์นี้</em></div>
+              <div class="metric"><span>ผ่านการตรวจคุณภาพ</span><strong>94<small>%</small></strong><em>เป้าหมาย 95%</em></div>
+              <div class="metric"><span>รายการรอติดตาม</span><strong>3 <small>ชุด</small></strong><em class="trend-watch">ควรตรวจวันนี้</em></div>
+            </div>
+
+            <div class="demo-chart" aria-label="กราฟแท่งตัวอย่าง แสดงสัดส่วนข้อมูลผ่านการตรวจคุณภาพของสี่กลุ่มงาน">
+              <div class="chart-heading"><strong>สัดส่วนที่ผ่านการตรวจ</strong><span>อัปเดตตัวอย่าง 29 ส.ค. 2569</span></div>
+              <div class="bar-row"><span>วิชาการ</span><div class="bar-track"><i class="bar-92" aria-hidden="true">&#8203;</i></div><strong>92%</strong></div>
+              <div class="bar-row"><span>นักศึกษา</span><div class="bar-track"><i class="bar-96" aria-hidden="true">&#8203;</i></div><strong>96%</strong></div>
+              <div class="bar-row"><span>บุคลากร</span><div class="bar-track"><i class="bar-88" aria-hidden="true">&#8203;</i></div><strong>88%</strong></div>
+              <div class="bar-row"><span>การเงิน</span><div class="bar-track"><i class="bar-99" aria-hidden="true">&#8203;</i></div><strong>99%</strong></div>
+            </div>
+
+            <p class="demo-disclaimer"><span aria-hidden="true">!</span> ตัวเลขทั้งหมดสร้างขึ้นเพื่อสอนวิธีอ่านหน้าจอ ไม่ใช่ข้อมูลของมหาวิทยาลัย</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section request-section" id="request-data" aria-labelledby="request-title">
+        <div class="request-copy">
+          <p class="section-number">03 · เมื่อข้อมูลยังไม่พร้อม</p>
+          <h2 id="request-title">บอกความต้องการแบบที่ทีมข้อมูลทำงานต่อได้</h2>
+          <p>รอบนี้ยังไม่ทำปุ่ม “ส่งคำขอสำเร็จ” ปลอม ๆ เพราะระบบยืนยันตัวตนและผู้อนุมัติยังไม่เชื่อมกัน แต่คุณคัดลอกแบบคำขอที่ครบถ้วนไปใช้ในช่องทางภายในได้ทันที</p>
+          <button class="button button-primary" type="button" id="copy-request">คัดลอกรูปแบบคำขอใช้ข้อมูล</button>
+          <p class="copy-feedback" id="copy-feedback" role="status" aria-live="polite"></p>
+        </div>
+        <div class="request-template" aria-label="ตัวอย่างรูปแบบคำขอใช้ข้อมูล">
+          <div class="template-top"><span>แบบคำขอฉบับย่อ</span><span aria-hidden="true">PSU DATA</span></div>
+          <dl>
+            <dt>ต้องการข้อมูลอะไร</dt><dd>ชื่อข้อมูลหรือคำถามที่ต้องการตอบ</dd>
+            <dt>นำไปใช้เพื่ออะไร</dt><dd>การตัดสินใจ รายงาน หรืองานวิจัยใด</dd>
+            <dt>ช่วงเวลา / รายละเอียด</dt><dd>ระบุเท่าที่จำเป็น หลีกเลี่ยงข้อมูลส่วนบุคคล</dd>
+            <dt>เจ้าของข้อมูลที่คาดว่าเกี่ยวข้อง</dt><dd>คณะ สำนัก ศูนย์ หรือหน่วยงาน</dd>
+            <dt>ต้องใช้เมื่อใด</dt><dd>วันที่และเหตุผลของกำหนดเวลา</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section help-section" id="help" aria-labelledby="help-title">
+        <div class="section-heading">
+          <p class="section-number">04 · ถ้าติดตรงไหน</p>
+          <h2 id="help-title">คำตอบสั้น ๆ ก่อนร้องขอความช่วยเหลือ</h2>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>ล็อกอินแล้วเจอหน้าว่าง หมายความว่าอย่างไร?<span aria-hidden="true">+</span></summary>
+            <p>มักหมายถึงยังไม่มีรายงานที่เผยแพร่ให้บัญชีของคุณ ไม่ใช่ระบบเสีย ให้กลับมาหน้านี้แล้วแจ้งชื่อข้อมูลหรือคำถามที่ต้องการแก่ทีมข้อมูล</p>
+          </details>
+          <details>
+            <summary>ทำไมต้องล็อกอินอีกครั้งหลังออกจากหน้านี้?<span aria-hidden="true">+</span></summary>
+            <p>รุ่น Pilot ยังใช้บัญชีท้องถิ่นของระบบรายงาน เมื่อเชื่อม PSU SSO แล้ว ผู้ใช้จะเข้าสู่ระบบเพียงครั้งเดียว</p>
+          </details>
+          <details>
+            <summary>การเลือกบทบาทบนหน้านี้ทำให้สิทธิ์เปลี่ยนไหม?<span aria-hidden="true">+</span></summary>
+            <p>ไม่เปลี่ยน การเลือกมีไว้จัดคำแนะนำเท่านั้น สิทธิ์จริงตรวจจากบัญชี กลุ่มผู้ใช้ และนโยบายข้อมูลของระบบทุกครั้ง</p>
+          </details>
+          <details>
+            <summary>ฉันส่งไฟล์ข้อมูลผ่านหน้านี้ได้เลยไหม?<span aria-hidden="true">+</span></summary>
+            <p>ยังไม่ได้ในรอบนี้ เพื่อไม่ให้ไฟล์สำคัญหลุดไปอยู่ในพื้นที่ที่ไม่มีผู้รับผิดชอบ ให้เจ้าของข้อมูลประสานทีมข้อมูลเพื่อกำหนดช่องทางรับส่งที่ปลอดภัยก่อน</p>
+          </details>
+        </div>
+
+        <aside class="support-callout">
+          <div class="support-icon" aria-hidden="true">?</div>
+          <div><strong>ยังไปต่อไม่ได้?</strong><p data-support-message>ติดต่อทีมข้อมูลผ่านช่องทางภายในที่หน่วยงานกำหนด พร้อมแนบภาพหน้าจอและเวลาที่พบปัญหา โดยไม่ส่งรหัสผ่าน</p></div>
+        </aside>
+      </section>
+
+      <section class="operator-section" id="operator-tools" hidden>
+        <div class="operator-heading">
+          <div><p class="section-number">สำหรับเครื่องแม่ข่ายเท่านั้น</p><h2>พื้นที่ทีมแพลตฟอร์ม</h2></div>
+          <p>ลิงก์ชุดนี้ปรากฏเมื่อเปิด Portal จากเครื่องที่รันระบบเท่านั้น แต่สิทธิ์จริงยังตรวจที่แต่ละบริการ</p>
+        </div>
+        <div class="operator-grid">
+          <a data-service-link="ingestion" href="#operator-tools"><strong>จัดการท่อนำเข้าข้อมูล</strong><span>NiFi · ผู้ดูแลเท่านั้น</span></a>
+          <a data-service-link="query" href="#operator-tools"><strong>ติดตามคำสั่งวิเคราะห์</strong><span>Trino · ผู้ดูแลเท่านั้น</span></a>
+          <a data-service-link="vectors" href="#operator-tools"><strong>ตรวจสอบดัชนีค้นหา</strong><span>Qdrant · ผู้ดูแลเท่านั้น</span></a>
+          <a data-service-link="storage" href="#operator-tools"><strong>ตรวจสอบพื้นที่จัดเก็บ</strong><span>RustFS · ห้ามแก้ metadata โดยตรง</span></a>
+          <a data-service-link="users" href="#operator-tools"><strong>จัดการบัญชีและสิทธิ์ BI</strong><span>PSU Reports · Admin เท่านั้น</span></a>
+        </div>
       </section>
     </main>
+
+    <footer>
+      <div class="footer-brand"><span class="brand-mark brand-mark-small" aria-hidden="true">PSU</span><p><strong>PSU Data Hub</strong><span>ชั้นใช้งานที่เป็นมิตร บนแพลตฟอร์มข้อมูลแบบ Open Source</span></p></div>
+      <p class="footer-meta"><span data-pilot-label>Pilot</span> · ห้ามใช้ข้อมูลส่วนบุคคลจริงจนกว่าทีมกำกับข้อมูลอนุมัติ</p>
+    </footer>
+
+    <noscript><div class="noscript-message">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบให้ตรงกับเครื่องที่คุณเปิดใช้งาน กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
   </body>
 </html>

@@ -6,6 +6,13 @@ from flask_appbuilder.security.manager import AUTH_DB
 SECRET_KEY = os.environ["SUPERSET_SECRET_KEY"]
 SQLALCHEMY_DATABASE_URI = os.environ["SUPERSET_DATABASE_URI"]
 
+# Keep the upstream application intact, but present it as the report workspace
+# users expect after entering through PSU Data Hub.
+APP_NAME = "PSU Reports"
+LOGO_TOOLTIP = "PSU Reports"
+LOGO_RIGHT_TEXT = "พื้นที่รายงานมหาวิทยาลัย"
+WELCOME_PAGE_LAST_TAB = "all"
+
 AUTH_TYPE = AUTH_DB
 AUTH_USER_REGISTRATION = False
 
