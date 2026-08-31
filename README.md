@@ -103,8 +103,8 @@ Passwords are not hard-coded in this README. The source of truth is your local
 | Surface | Identity | Credential source | Purpose |
 |---|---|---|---|
 | Superset | `psu-admin` by default | `PSU_ADMIN_PASSWORD` | Full local administrator |
-| Superset | `analyst` by default | `PSU_ANALYST_PASSWORD` | Read `curated` and `published` |
-| Superset | `viewer` by default | `PSU_VIEWER_PASSWORD` | Read `published` only |
+| Superset | `analyst` by default | `PSU_ANALYST_PASSWORD` | Read + write (`INSERT`/`UPDATE`/`DELETE`) on `curated` and `published`; author dashboards |
+| Superset | one account per `PSU_VIEWER_<n>_USERNAME` (`viewer`/`viewer-eng`/`viewer-med` by default) | `PSU_VIEWER_<n>_PASSWORD` | Read `published` only; each account's `PSU_VIEWER_<n>_ORG_UNIT` further narrows which rows it sees on tables opted into row filtering — see §4.1 |
 | NiFi | `psu-admin` by default | `NIFI_PASSWORD` | NiFi single-user administrator |
 | Trino | `nifi` by default | No password store; `TRINO_INGESTION_USERNAME` is an asserted logical identity | Dev-only table operations in `raw`, `curated`, and `documents` for clients routed through Trino |
 | RustFS | value of `RUSTFS_ACCESS_KEY` | `RUSTFS_SECRET_KEY` | Object-storage console and S3 API |
@@ -117,6 +117,31 @@ The usernames shown above are the defaults from `.env.example`. If your `.env`
 uses different username values, use those values instead. Do not print or paste
 the contents of `.env`; the seed and verification scripts report pass/fail
 without printing credentials.
+
+### 4.1 Viewer org-unit tiers
+
+`PSU_VIEWER_COUNT` in `.env` controls how many viewer accounts exist (numbered
+`PSU_VIEWER_1_*` .. `PSU_VIEWER_<PSU_VIEWER_COUNT>_*`, up to 10 — this is a
+dev-only scheme; see §7 for the pilot-scale alternative). Each account has its
+own `_USERNAME`, `_PASSWORD`, and `_ORG_UNIT`:
+
+- `PSU_VIEWER_<n>_ORG_UNIT=*` — an **executive/head** tier: sees every org
+  unit's rows, unfiltered, still only within `published`.
+- Any other value (e.g. `eng`, `med`) — a **standard** tier: on any table
+  listed in [`config/opa/org_scoped_tables.json`](config/opa/org_scoped_tables.json),
+  sees only rows where its `org_unit` column matches.
+
+Row filtering is enforced by Trino's OPA row-filter integration
+(`opa.policy.row-filters-uri` in
+[`config/trino/access-control.properties`](config/trino/access-control.properties),
+policy in [`config/opa/trino.rego`](config/opa/trino.rego)), so it applies to
+every client that queries through Trino, not just Superset dashboards.
+
+**A table is only filtered once its owner opts it in.** Add the table name to
+`config/opa/org_scoped_tables.json` and give it an `org_unit` column — a table
+not listed there is unaffected (same as before this feature existed). Listing
+a table that has no `org_unit` column will make every query against it fail,
+not silently return unfiltered rows — add the column first.
 
 ## 5. Entry points
 
@@ -191,13 +216,14 @@ SHOW TABLES FROM polaris.raw;
 
 ### 6.3 Compare the seeded access roles
 
-Sign out of Superset and repeat queries as `analyst` and `viewer`.
+Sign out of Superset and repeat queries as `analyst` and each viewer account.
 
-| Superset user | Trino group | Allowed data access |
+| Superset user | Trino group(s) | Allowed data access |
 |---|---|---|
 | `psu-admin` | `psu_admin` | All catalogs and operations |
-| `analyst` | `psu_analyst` | Read `curated` and `published` |
-| `viewer` | `psu_viewer` | Read `published` only |
+| `analyst` | `psu_analyst` | Read/write (`SELECT`/`INSERT`/`UPDATE`/`DELETE`) on `curated` and `published` — no schema DDL |
+| viewer with `_ORG_UNIT=*` (`viewer` by default) | `psu_viewer`, `psu_viewer_exec` | Read all of `published`, unfiltered |
+| viewer with `_ORG_UNIT=eng`/`med`/... | `psu_viewer`, `psu_viewer_org_<unit>` | Read `published`, row-filtered to its org unit on any table listed in `config/opa/org_scoped_tables.json` |
 | value of `TRINO_INGESTION_USERNAME` | `psu_ingestion` | Dev-only table operations in `raw`, `curated`, and `documents` through Trino |
 
 Superset handles the local login, but Trino and OPA enforce the data boundary.
@@ -263,11 +289,18 @@ publishing them.
 
 ## 7. Add or change users
 
-The current automation owns only the three shared **development personas** in
-`.env`. Change their usernames/passwords there, then run both account scripts.
-If a username changes, the new account is reconciled but the old Superset
-account is not deleted automatically; verify access and deactivate the obsolete
-account explicitly in **Settings → Security → List Users**.
+The current automation owns only the shared **development personas** in
+`.env`: one `psu-admin`, one `analyst`, and `PSU_VIEWER_COUNT` viewer accounts
+(each with its own `_USERNAME`/`_PASSWORD`/`_ORG_UNIT`, up to 10 slots — see
+§4.1). Change them there, then run both account scripts. If a username
+changes, the new account is reconciled but the old Superset account is not
+deleted automatically; verify access and deactivate the obsolete account
+explicitly in **Settings → Security → List Users**.
+
+To add another org-unit viewer: pick the next unused `PSU_VIEWER_<n>_*` slot,
+set its username/password/org unit in `.env`, raise `PSU_VIEWER_COUNT` if
+needed, then rerun `./scripts/seed-dev-accounts.sh` and
+`./scripts/verify-dev-accounts.sh`.
 
 Do not hand the shared personas to a real pilot group. Before a pilot, provision
 10–20 named local Superset accounts and a non-committed Trino group-membership

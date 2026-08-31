@@ -12,8 +12,17 @@ is_admin if "psu_admin" in groups
 is_ingestion if "psu_ingestion" in groups
 is_analyst if "psu_analyst" in groups
 is_viewer if "psu_viewer" in groups
+is_viewer_exec if "psu_viewer_exec" in groups
 is_reader if is_analyst
 is_reader if is_viewer
+
+# Non-executive viewers are scoped to their org unit(s) via psu_viewer_org_<unit>
+# groups rendered by config/trino/render-groups.sh from PSU_VIEWER_<n>_ORG_UNIT.
+viewer_org_units := {ou |
+  some g in groups
+  startswith(g, "psu_viewer_org_")
+  ou := trim_prefix(g, "psu_viewer_org_")
+}
 
 table := input.action.resource.table
 
@@ -65,6 +74,15 @@ allow if {
   table.schemaName == "published"
 }
 
+# Analysts additionally get row-level write access on curated and published —
+# schema/table DDL (CreateTable, DropTable, ...) stays admin/ingestion-only.
+allow if {
+  is_analyst
+  table.catalogName == "polaris"
+  table.schemaName in {"curated", "published"}
+  operation in {"InsertIntoTable", "UpdateTableColumns", "DeleteFromTable"}
+}
+
 # Trino implements SHOW/DESCRIBE through information_schema reads. Readers need
 # this metadata path for Superset dataset discovery; data-table reads remain
 # constrained by the curated/published rules above.
@@ -95,4 +113,16 @@ allow if {
 allow if {
   user == "superset"
   operation == "ImpersonateUser"
+}
+
+# Row-level filtering for non-executive viewers, opt-in per table via
+# data/trino/org_scoped_tables.json (config/opa/org_scoped_tables.json). A
+# table only gets filtered once its owner lists it there AND it actually has
+# an org_unit column — an un-listed table is unaffected, same as today.
+rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
+  is_viewer
+  not is_viewer_exec
+  table.schemaName == "published"
+  table.tableName in data.org_scoped_tables
+  some ou in viewer_org_units
 }

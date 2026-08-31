@@ -49,12 +49,25 @@ flowchart LR
    queries carry the logged-in Superset username.
 4. Trino resolves that username to local PSU groups and asks OPA whether the
    requested operation and table are permitted.
-5. OPA defaults to deny. Analysts can select only from `curated` and `published`;
-   viewers can select only from `published`.
+5. OPA defaults to deny. Analysts can read and write (`INSERT`/`UPDATE`/`DELETE`,
+   no DDL) on `curated` and `published`; viewers can only select from `published`.
+6. For a `SELECT`, Trino separately asks OPA for row filters
+   (`opa.policy.row-filters-uri`). Non-executive viewers (any account whose
+   `PSU_VIEWER_<n>_ORG_UNIT` is not `*`) get an `org_unit = '<their unit>'`
+   predicate injected on any table listed in
+   [`config/opa/org_scoped_tables.json`](../config/opa/org_scoped_tables.json) —
+   an explicit per-table opt-in so a table without an `org_unit` column is
+   never accidentally filtered (which would just fail the query). Executive
+   viewers (`_ORG_UNIT=*`) and admin/analyst get no row filter.
 
 The group renderer and OPA policy are intentionally visible policy-as-code; the
 generated group file itself is ignored runtime state. Production should use
 verified PSU OAuth2 group claims and TLS between every identity-aware service.
+
+Row filtering is a Trino/OPA mechanism, not a Superset one — it applies to
+every client that queries through Trino (Superset, `trino` CLI, JDBC, etc.),
+so a single Superset dashboard built once shows each viewer only their own
+org unit's rows with no per-dashboard configuration.
 
 ## Persistence
 

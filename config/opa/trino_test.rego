@@ -3,6 +3,8 @@ package trino
 import rego.v1
 
 viewer_context := {"context": {"identity": {"user": "viewer", "groups": ["psu_viewer"]}}}
+viewer_exec_context := {"context": {"identity": {"user": "exec-viewer", "groups": ["psu_viewer", "psu_viewer_exec"]}}}
+viewer_eng_context := {"context": {"identity": {"user": "viewer-eng", "groups": ["psu_viewer", "psu_viewer_org_eng"]}}}
 analyst_context := {"context": {"identity": {"user": "analyst", "groups": ["psu_analyst"]}}}
 ingestion_context := {"context": {"identity": {"user": "nifi", "groups": ["psu_ingestion"]}}}
 
@@ -43,6 +45,77 @@ test_analyst_cannot_read_raw if {
     "operation": "SelectFromColumns",
     "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "source"}},
   }})
+}
+
+test_analyst_can_insert_curated if {
+  allow with input as object.union(analyst_context, {"action": {
+    "operation": "InsertIntoTable",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "model"}},
+  }})
+}
+
+test_analyst_can_update_published if {
+  allow with input as object.union(analyst_context, {"action": {
+    "operation": "UpdateTableColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report", "columns": ["value"]}},
+  }})
+}
+
+test_analyst_can_delete_curated if {
+  allow with input as object.union(analyst_context, {"action": {
+    "operation": "DeleteFromTable",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "model"}},
+  }})
+}
+
+test_analyst_cannot_insert_raw if {
+  not allow with input as object.union(analyst_context, {"action": {
+    "operation": "InsertIntoTable",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "source"}},
+  }})
+}
+
+test_viewer_cannot_insert_published if {
+  not allow with input as object.union(viewer_context, {"action": {
+    "operation": "InsertIntoTable",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+  }})
+}
+
+test_viewer_org_eng_row_filter_on_scoped_table if {
+  rowFilters == {{"expression": "org_unit = 'eng'"}}
+    with input as object.union(viewer_eng_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}
+
+test_viewer_exec_no_row_filter_on_scoped_table if {
+  count(rowFilters) == 0
+    with input as object.union(viewer_exec_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}
+
+test_viewer_no_org_group_no_row_filter if {
+  count(rowFilters) == 0
+    with input as object.union(viewer_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}
+
+test_viewer_org_eng_no_row_filter_on_unscoped_table if {
+  count(rowFilters) == 0
+    with input as object.union(viewer_eng_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "unlisted"}},
+    }})
+    with data.org_scoped_tables as ["report"]
 }
 
 test_viewer_cannot_execute_procedure if {

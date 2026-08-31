@@ -17,10 +17,16 @@ docker compose run --rm --no-deps --entrypoint /bin/sh trino -ec '
   for trino_user in \
     "${PSU_ADMIN_USERNAME}" \
     "${PSU_ANALYST_USERNAME}" \
-    "${PSU_VIEWER_USERNAME}" \
     "${TRINO_INGESTION_USERNAME}"; do
     trino --server http://trino:8080 --user "${trino_user}" \
       --execute "SELECT current_user" >/dev/null
+  done
+  viewer_index=1
+  while [ "${viewer_index}" -le "${PSU_VIEWER_COUNT}" ]; do
+    eval "viewer_username=\${PSU_VIEWER_${viewer_index}_USERNAME}"
+    trino --server http://trino:8080 --user "${viewer_username}" \
+      --execute "SELECT current_user" >/dev/null
+    viewer_index=$((viewer_index + 1))
   done
 '
 echo "PASS Trino logical dev identities can start authorized queries"
