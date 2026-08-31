@@ -9,7 +9,11 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-env_mode="$(stat -f '%Lp' .env 2>/dev/null || stat -c '%a' .env)"
+# Try GNU stat (Linux) first, then BSD/macOS stat -- as two separate
+# command substitutions, not one, so a failing GNU attempt can't leak its
+# partial stdout (stat -f on GNU treats '%Lp' as a second file operand and
+# prints a filesystem-info dump for the real file before failing on it).
+env_mode="$(stat -c '%a' .env 2>/dev/null)" || env_mode="$(stat -f '%Lp' .env 2>/dev/null)"
 if [ "${env_mode}" != "600" ]; then
   echo ".env permissions must be 600; run chmod 600 .env" >&2
   exit 1
