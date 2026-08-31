@@ -57,6 +57,22 @@ can take tens of minutes:
 docker compose up -d --build
 ```
 
+On a long-running VM (not a throwaway local checkout), layer
+[`compose.production.yaml`](compose.production.yaml) on top instead — it adds
+`restart: always`, log rotation, and starting-point memory/CPU limits to the
+long-running services, without changing architecture, ports, or which
+services exist. Read the comments at the top of that file before trusting
+the limit values; they are unmeasured starting points, not numbers profiled
+against real usage on your VM:
+
+```bash
+docker compose -f compose.yaml -f compose.production.yaml up -d --build
+```
+
+Every other command in this README (`logs`, `ps`, `restart`, etc.) needs the
+same `-f compose.yaml -f compose.production.yaml` prefix once you start this
+way, or Compose falls back to reading just `compose.yaml`.
+
 Watch the one-time initialization services:
 
 ```bash

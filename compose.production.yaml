@@ -1,0 +1,157 @@
+# Lightweight production hardening layered on top of compose.yaml. Does not
+# change architecture, ports, or which services exist -- only restart policy,
+# log rotation, and resource limits for the long-running services.
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.production.yaml up -d
+#
+# The memory/cpu limits below are STARTING POINTS, not measured numbers for
+# this VM -- nobody has profiled real workload memory here yet. Before
+# trusting them: run the stack under real usage, watch `docker stats`, and
+# adjust. Set each service's limit comfortably above what `docker stats`
+# shows plus headroom, not below it -- a limit set too low gets the
+# container OOM-killed by the kernel rather than degrading gracefully.
+# Sum of all limits should leave room for the host OS itself (don't size to
+# 100% of the VM's RAM).
+#
+# One-shot setup jobs (bucket-setup, polaris-bootstrap, polaris-setup,
+# dev-identity-setup, superset-init) are intentionally left untouched here:
+# they use restart:"no" in compose.yaml on purpose (run once, exit 0) --
+# overriding that to "always" would loop them forever and break bootstrap.
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  rustfs:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  bucket-setup:
+    <<: *default-logging
+
+  polaris-bootstrap:
+    <<: *default-logging
+
+  polaris:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  polaris-setup:
+    <<: *default-logging
+
+  opa:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  dev-identity-setup:
+    <<: *default-logging
+
+  trino:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+  redis:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  superset-init:
+    <<: *default-logging
+
+  superset:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  superset-mcp:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  qdrant:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  nifi:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+  psu-portal:
+    <<: *default-logging
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  caddy:
+    <<: *default-logging
+    # Repeats the base image here (not just relying on inheriting it from
+    # compose.yaml): caddy is profile-gated (profiles: ["public"]) and when
+    # that profile isn't active, Compose's multi-file merge treats this
+    # override fragment as a standalone service needing its own image/build
+    # -- confirmed by testing, not a style choice.
+    image: caddy:2.9.1-alpine
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
