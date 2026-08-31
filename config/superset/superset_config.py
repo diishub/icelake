@@ -34,6 +34,16 @@ DATA_CACHE_CONFIG = CACHE_CONFIG
 WTF_CSRF_ENABLED = True
 TALISMAN_ENABLED = False
 
+# Only trust X-Forwarded-* headers when actually deployed behind the Caddy
+# reverse proxy (config/caddy/Caddyfile, "public" Compose profile). Off by
+# default so a direct-loopback dev setup never trusts forwarded headers from
+# whoever connects directly.
+ENABLE_PROXY_FIX = os.environ.get("SUPERSET_BEHIND_PROXY", "false").lower() == "true"
+if ENABLE_PROXY_FIX:
+    PROXY_FIX_CONFIG = {"x_for": 1, "x_proto": 1, "x_host": 1, "x_port": 1, "x_prefix": 0}
+    PREFERRED_URL_SCHEME = "https"
+    SESSION_COOKIE_SECURE = True
+
 # Local test mode only. Bind-mounted to localhost in Compose. Replace this with
 # PSU SSO JWT validation before exposing MCP outside the workstation.
 MCP_AUTH_ENABLED = False

@@ -166,6 +166,72 @@ Trino uses host port 8086 because port 8080 is commonly occupied. Services
 inside Compose still connect to `trino:8080`. Override the host port by setting
 `TRINO_HOST_PORT` in `.env` and update any browser bookmarks accordingly.
 
+### 5.1 Public access through a reverse proxy (opt-in)
+
+Every port above is `127.0.0.1`-only by default (§11) — the supported way to
+reach them from off-host is an SSH tunnel. If this deployment instead needs
+to serve real testers over the internet, an opt-in `caddy` service
+([`config/caddy/Caddyfile`](config/caddy/Caddyfile)) can front **only the
+portal and Superset** with TLS (automatic Let's Encrypt certificate) and
+HTTP Basic Auth, as one more gate in front of Superset's own login. Every
+other service (Trino, NiFi, RustFS console, Polaris, Qdrant) stays
+loopback-only/SSH-tunnel-only regardless — this proxy never touches them.
+
+Superset gets its own port on the same hostname rather than a URL sub-path
+(e.g. `/reports`), because reverse-proxying Superset at a sub-path is not
+reliably supported upstream — community reports show broken static
+assets/redirects even with the recommended `ENABLE_PROXY_FIX`/`x_prefix`
+settings. A dedicated port avoids that class of bug entirely.
+
+**To enable it**, add to `.env` (the service is gated by a Compose profile —
+without `COMPOSE_PROFILES=public`, `docker compose up -d` never starts it or
+tries to bind ports 80/443/9443):
+
+```dotenv
+COMPOSE_PROFILES=public
+SUPERSET_BEHIND_PROXY=true
+PUBLIC_DOMAIN=your-real-hostname.psu.ac.th
+SUPERSET_PUBLIC_PORT=9443
+PROXY_BASIC_AUTH_USER=pick-a-username
+PROXY_BASIC_AUTH_HASH=<see below>
+```
+
+Generate the Basic Auth hash (bcrypt) interactively so the plaintext
+password never touches shell history, this repo, or any chat log:
+
+```bash
+docker run --rm -it caddy:2.9.1-alpine caddy hash-password
+```
+
+**Critical**: the hash always contains literal `$` characters
+(`$2a$14$...`). Docker Compose's own `.env` parser also treats `$` as
+variable interpolation — paste the hash into `.env` with every `$` doubled
+to `$$`, or Compose silently replaces those segments with empty strings and
+Basic Auth breaks (verified: an un-escaped hash gets logged by Compose as
+"variable ... is not set, defaulting to a blank string", and `basic_auth`
+then can never match). Example:
+
+```dotenv
+PROXY_BASIC_AUTH_HASH=$$2a$$14$$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345
+```
+
+**Before starting it**, the VM's firewall/security group must allow inbound
+80, 443, and `SUPERSET_PUBLIC_PORT` (9443 by default) — port 80 and 443 are
+needed even though Superset listens on 9443, because Let's Encrypt's
+challenge and Caddy's own ACME client use them. `PUBLIC_DOMAIN` must already
+resolve (A/AAAA record) to this VM's public IP before first start, or
+certificate issuance fails.
+
+```bash
+docker compose up -d
+docker compose logs -f caddy   # watch certificate issuance on first start
+```
+
+Testers reach the deployment at `https://<PUBLIC_DOMAIN>/` (portal) and
+`https://<PUBLIC_DOMAIN>:<SUPERSET_PUBLIC_PORT>/` (Superset), entering the
+Basic Auth credentials once per browser session, then signing into Superset
+normally with their seeded account.
+
 ## 6. First walkthrough
 
 ### 6.1 Complete the beginner path
@@ -436,7 +502,9 @@ self-signed certificate causes an expected browser warning.
 - The portal is not an authentication gateway. Portal, Superset, query, storage,
   and operator host ports are loopback-only in this development phase. Use
   synthetic data; do not change them to public bindings without an approved
-  TLS/authentication perimeter.
+  TLS/authentication perimeter. The one approved exception is the opt-in
+  `caddy` "public" profile (§5.1), which fronts only the portal and Superset
+  with TLS + Basic Auth — every other service stays loopback-only even then.
 - The RustFS API and console are loopback-only. Keep object storage behind the
   platform boundary; do not republish ports 9000/9001 to user networks.
 - Superset users are local test users; PSU OAuth2 SSO is not configured.

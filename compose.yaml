@@ -52,6 +52,7 @@ x-superset-common: &superset-common
     PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
     <<: *psu-viewer-identities
     POLARIS_CATALOG: ${POLARIS_CATALOG:-psu}
+    SUPERSET_BEHIND_PROXY: ${SUPERSET_BEHIND_PROXY:-false}
   volumes:
     - ./config/superset:/app/pythonpath:ro
     - ./runtime/superset:/app/superset_home
@@ -335,3 +336,38 @@ services:
     depends_on:
       - superset
       - nifi
+
+  # Public-facing TLS termination + Basic Auth gate for the portal and
+  # Superset only -- every other service stays loopback-only (README §11).
+  # Opt-in only: set COMPOSE_PROFILES=public in .env, alongside PUBLIC_DOMAIN,
+  # SUPERSET_PUBLIC_PORT, PROXY_BASIC_AUTH_USER, PROXY_BASIC_AUTH_HASH (see
+  # README §5.1). Without that, `docker compose up -d` never starts this and
+  # never tries to bind ports 80/443.
+  caddy:
+    image: caddy:2.9.1-alpine
+    restart: unless-stopped
+    profiles: ["public"]
+    environment:
+      # Plain defaults, not required-var (:?) syntax -- Compose interpolates
+      # every service's environment at parse time regardless of which
+      # profile is active, so a :? guard here would break `docker compose
+      # config`/`up` even for checkouts that never enable the "public"
+      # profile. Caddy itself fails loudly on startup if these are still
+      # empty when the profile actually runs (see README §5.1).
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-}
+      SUPERSET_PUBLIC_PORT: ${SUPERSET_PUBLIC_PORT:-9443}
+      PROXY_BASIC_AUTH_USER: ${PROXY_BASIC_AUTH_USER:-}
+      PROXY_BASIC_AUTH_HASH: ${PROXY_BASIC_AUTH_HASH:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${SUPERSET_PUBLIC_PORT:-9443}:${SUPERSET_PUBLIC_PORT:-9443}"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./runtime/caddy/data:/data
+      - ./runtime/caddy/config:/config
+    depends_on:
+      psu-portal:
+        condition: service_started
+      superset:
+        condition: service_healthy
