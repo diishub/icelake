@@ -60,6 +60,26 @@ allow if {
   table.schemaName in {"raw", "curated", "documents"}
 }
 
+# Ingestion also gets a Hive-catalog staging area (config/trino/catalog/hive.properties)
+# used to bridge file-based sources into Iceberg via Trino SQL, since NiFi's
+# own Iceberg processors cannot write to this stack's Polaris. No operation
+# restriction here, matching the polaris rule above -- ingestion needs
+# CREATE/DROP/INSERT/SELECT on its own staging tables.
+allow if {
+  is_ingestion
+  table.catalogName == "hive"
+  table.schemaName == "raw_staging"
+}
+
+# SHOW SCHEMAS/TABLES against hive go through information_schema reads, same
+# as the polaris pattern above -- needed for discovery, not just direct DDL.
+allow if {
+  is_ingestion
+  is_select
+  table.catalogName == "hive"
+  table.schemaName == "information_schema"
+}
+
 allow if {
   is_analyst
   is_select
@@ -104,6 +124,18 @@ allow if {
 allow if {
   is_ingestion
   operation in read_control_operations
+}
+
+# CreateSchema is a tableless gate -- its resource has a `schema` field, not
+# `table`, so none of the per-table rules above ever see it. Must be granted
+# separately or Trino denies it before those rules get a chance to match.
+# Scoped to the catalogs ingestion legitimately has per-table access to.
+ingestion_catalogs := {"polaris", "hive"}
+
+allow if {
+  is_ingestion
+  operation == "CreateSchema"
+  input.action.resource.schema.catalogName in ingestion_catalogs
 }
 
 # Superset is the only configured impersonating client in this dev stack. It

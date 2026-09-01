@@ -222,6 +222,10 @@ services:
       PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      # Consumed via ${ENV:RUSTFS_ACCESS_KEY} in config/trino/catalog/hive.properties
+      # (Trino's own secrets substitution, not shell expansion).
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
     ports:
       - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
     volumes:

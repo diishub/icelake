@@ -39,6 +39,13 @@ flowchart LR
 - NiFi is the visual ingestion workbench. It replaces Airbyte in this Compose
   deployment because current Airbyte Core is deployed through Kubernetes and
   `abctl`, not a supported Docker Compose topology.
+- NiFi never writes to Iceberg directly — its native Iceberg processors don't
+  work against this stack's Polaris (verified: `RESTIcebergCatalog`/
+  `PutIcebergRecord` fail regardless of config, see §6.4 of the README).
+  Ingestion instead stages files in RustFS and drives Trino SQL
+  (`hive.raw_staging`, a second file-metastore Trino catalog,
+  [`config/trino/catalog/hive.properties`](../config/trino/catalog/hive.properties))
+  to bridge into `polaris.raw`.
 - Qdrant is a rebuildable vector index, never the only copy of document text.
 
 ## Access-control flow

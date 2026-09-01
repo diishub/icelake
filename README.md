@@ -245,28 +245,50 @@ the ignored runtime directory. Authorization rules and tests are in
 [`config/opa/trino.rego`](config/opa/trino.rego) and
 [`config/opa/trino_test.rego`](config/opa/trino_test.rego).
 
-### 6.4 Prepare a CSV ingestion
+### 6.4 Prepare an ingestion flow
 
-Copy a test CSV into the incoming folder:
+Copy a test file into an incoming folder (`data/incoming/csv/`,
+`data/incoming/files/`, or `data/incoming/documents/`):
 
 ```bash
 cp /path/to/example.csv data/incoming/csv/
 ```
 
 NiFi sees it at `/data/incoming/csv/example.csv`. Placing the file there does
-not ingest it automatically; NiFi flows are intentionally not pre-seeded.
+not ingest it automatically; NiFi flows are intentionally not pre-seeded —
+open NiFi (`https://localhost:8443/nifi`, through an SSH tunnel per §5) and
+build one.
 
-Open NiFi and build a flow using processors/controller services such as:
+**Do not use NiFi's native Iceberg processors** (`RESTIcebergCatalog`,
+`PutIcebergRecord`, `S3IcebergFileIOProvider`) **against this stack's
+Polaris** — verified broken two independent ways on NiFi 2.10.0: the
+`RESTIcebergCatalog` controller service can't attach the `Polaris-Realm`
+header Polaris requires, and even with that requirement disabled,
+`PutIcebergRecord` throws `UnsupportedOperationException: Returning response
+headers is not supported` on every write, regardless of credentials.
 
-- `ListFile` and `FetchFile` to read incoming files;
-- `CSVReader` to parse records;
-- `RESTIcebergCatalog` for Polaris;
-- `S3IcebergFileIOProvider` for RustFS;
-- `ParquetIcebergWriter` and `PutIcebergRecord` for Iceberg output.
+The proven working pattern instead routes through **Trino SQL** using a
+second, file-metastore-backed Trino catalog
+([`config/trino/catalog/hive.properties`](config/trino/catalog/hive.properties))
+as a staging area:
 
-Database ingestion can use `QueryDatabaseTableRecord` with a JDBC connection
-pool. Put required JDBC JAR files in `drivers/`; see
-[`drivers/README.md`](drivers/README.md).
+1. Land the raw file in RustFS via `PutS3Object` (any format — this is a
+   plain archival copy, not a parse step).
+2. For structured sources meant for Iceberg, stage the data as a file in
+   RustFS too (the same CSV, or a `QueryDatabaseTableRecord` result written
+   with a `CSVRecordSetWriter`), then use `ExecuteGroovyScript` to drive
+   Trino's `/v1/statement` REST API (`X-Trino-User: nifi`) and: create a
+   one-off external table in `hive.raw_staging` pointing at that one staged
+   file, `INSERT INTO polaris.raw."<table>" SELECT * FROM` it, then `DROP
+   TABLE` the staging pointer (metadata only — the underlying file in RustFS
+   is untouched, so this is safe to make idempotent per ingested file/batch).
+
+This is how both a universal any-format file-archive flow and an incremental
+`QueryDatabaseTableRecord`-based database ingestion flow (`DBCPConnectionPool`
++ JDBC driver in `drivers/`, see [`drivers/README.md`](drivers/README.md))
+were built and verified end-to-end against a synthetic PostgreSQL source
+during development. Neither flow definition is committed to this repo (same
+"not pre-seeded" policy as above) — rebuild them the same way if lost.
 
 ### 6.5 Inspect stored objects
 

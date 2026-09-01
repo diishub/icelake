@@ -129,6 +129,34 @@ test_viewer_cannot_create_table if {
   }})
 }
 
+test_ingestion_can_read_hive_information_schema if {
+  allow with input as object.union(ingestion_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "hive", "schemaName": "information_schema", "tableName": "schemata"}},
+  }})
+}
+
+test_ingestion_can_write_hive_staging if {
+  allow with input as object.union(ingestion_context, {"action": {
+    "operation": "CreateTable",
+    "resource": {"table": {"catalogName": "hive", "schemaName": "raw_staging", "tableName": "stage_1"}},
+  }})
+}
+
+test_ingestion_can_create_schema_on_hive if {
+  allow with input as object.union(ingestion_context, {"action": {
+    "operation": "CreateSchema",
+    "resource": {"schema": {"catalogName": "hive", "schemaName": "raw_staging"}},
+  }})
+}
+
+test_analyst_cannot_create_schema_on_hive if {
+  not allow with input as object.union(analyst_context, {"action": {
+    "operation": "CreateSchema",
+    "resource": {"schema": {"catalogName": "hive", "schemaName": "raw_staging"}},
+  }})
+}
+
 test_ingestion_can_write_raw if {
   allow with input as object.union(ingestion_context, {"action": {
     "operation": "CreateTable",
