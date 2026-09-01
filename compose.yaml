@@ -316,6 +316,17 @@ services:
       SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
       NIFI_WEB_HTTPS_PORT: "8443"
       NIFI_WEB_PROXY_HOST: localhost:8443
+      # Read via System.getenv(...) from ExecuteGroovyScript processors that
+      # need a direct JDBC connection to the source DB (metadata-driven
+      # multi-table ingestion) -- ExecuteGroovyScript has no controller-
+      # service-reference property, unlike DBCPConnectionPool-backed
+      # processors, so this is the same env-var pattern already used
+      # throughout this compose file for every other credential.
+      PSU_SOURCE_DB_HOST: ${PSU_SOURCE_DB_HOST:-}
+      PSU_SOURCE_DB_PORT: ${PSU_SOURCE_DB_PORT:-}
+      PSU_SOURCE_DB_NAME: ${PSU_SOURCE_DB_NAME:-}
+      PSU_SOURCE_DB_USER: ${PSU_SOURCE_DB_USER:-}
+      PSU_SOURCE_DB_PASSWORD: ${PSU_SOURCE_DB_PASSWORD:-}
     ports:
       - 127.0.0.1:8443:8443
     volumes:

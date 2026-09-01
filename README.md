@@ -290,6 +290,27 @@ were built and verified end-to-end against a synthetic PostgreSQL source
 during development. Neither flow definition is committed to this repo (same
 "not pre-seeded" policy as above) — rebuild them the same way if lost.
 
+**Ingesting from a real external source with PDPA-sensitive tables**: if the
+source database has its own column-level classification metadata (a
+`meta.db_table`/`meta.db_column` style registry with a `classification`/
+`secret_level` field — PSU's own warehouses commonly do), build the ingestion
+as **metadata-driven** rather than a per-table `QueryDatabaseTableRecord`:
+`QueryDatabaseTableRecord` doesn't accept an incoming connection in this NiFi
+version (`INPUT_FORBIDDEN`, verified), so a single `ExecuteGroovyScript` opens
+its own JDBC connection instead (`java.sql.DriverManager`, connection details
+passed as container environment variables — see the `PSU_SOURCE_DB_*` vars in
+`.env.example` and `nifi`'s environment in `compose.yaml`), queries the
+source's own table/column registry for the target schema, and **excludes any
+column flagged sensitive before ever selecting it** — never `SELECT *` against
+a table that hasn't been checked this way. A table with zero registered
+"safe" columns is skipped entirely (fail closed), not defaulted to
+"select everything." This was built and verified against a real 700+ table
+PSU warehouse, piloted against one reference-data schema with zero flagged
+columns before considering any schema with real personal data. Confirm the
+lawful basis and retention period for anything beyond reference/lookup data
+before extending this to a schema with personal data — this repo doesn't
+decide that for you.
+
 ### 6.5 Inspect stored objects
 
 Open the RustFS Console, sign in with `RUSTFS_ACCESS_KEY` and
