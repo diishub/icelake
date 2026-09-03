@@ -150,6 +150,7 @@ not silently return unfiltered rows — add the column first.
 |---|---|---|
 | PSU Data Hub | <http://localhost:8085> | Recommended starting point for every pilot user |
 | PSU Reports | <http://localhost:8088/dashboard/list/> | Authenticated reports; analysts can continue to SQL Lab |
+| Platform operations | <http://localhost:8088/superset/dashboard/psu-platform-operations/> | Ingestion freshness, run history and maintenance history; admin and analyst only |
 | Trino | <http://localhost:8086> | Operator-only query status on the server host |
 | NiFi | <https://localhost:8443/nifi> | Operator-only ingestion workbench on the server host |
 | RustFS Console | <http://localhost:9001> | Operator-only object storage console; never edit Iceberg metadata directly |
@@ -487,6 +488,53 @@ authorizer for `SelectFromColumns` with an empty column list as part of
 authorising `ALTER TABLE ... EXECUTE`, so the policy allows exactly that form
 and denies any request that names a column
 ([`config/opa/trino.rego`](config/opa/trino.rego)).
+
+
+### 6.11 Platform operations dashboard
+
+```bash
+docker compose run --rm platform-migrate   # if the control plane is not there yet
+docker compose exec superset python /app/pythonpath/bootstrap_ops_dashboard.py
+./scripts/test-ops-dashboard.sh
+```
+
+<http://localhost:8088/superset/dashboard/psu-platform-operations/> answers what
+an operator actually asks: did last night run, what did it skip and why, and
+when did maintenance last delete anything. Three tables — ingestion freshness,
+recent runs, maintenance history.
+
+It reads the control plane through Trino, as a catalog
+([`config/trino/catalog/platform.properties`](config/trino/catalog/platform.properties)),
+not through a second connection straight to PostgreSQL. That keeps one
+authorization path: the Superset connection impersonates the signed-in user,
+so OPA decides. Admins and analysts can read it; **report viewers cannot** —
+run history names source systems, tables and failure reasons that a report
+reader has no reason to see. The Trino login behind the catalog holds `SELECT`
+and nothing else, so read-only is enforced by the database as well as by
+policy.
+
+The bootstrap script is idempotent and runs as part of `superset-init`, so a
+fresh machine gets the dashboard without a manual step.
+
+### 6.12 Restoring a flow
+
+`./scripts/check-nifi-sources.sh` writes a flow definition to
+`runtime/nifi-flow-backups/` every time it runs, which is the easy half.
+Restoring is the half that is expensive to discover does not work:
+
+```bash
+./scripts/restore-ingest-flow.sh                     # newest backup
+./scripts/restore-ingest-flow.sh path/to/flow.json   # a specific one
+```
+
+The restored flow arrives stopped and in its own process group beside whatever
+is already on the canvas, so a restore never silently overwrites working state.
+Reconciling the two copies is left to whoever ran it.
+
+A backup is checked against the guardrail denylist before it is imported. That
+is not a formality: a definition taken before the guardrail existed can carry a
+connection URL to a host that is no longer allowed, and that host never passes
+through `.env` where the other checks would see it.
 
 ## 7. Add or change users
 

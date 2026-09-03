@@ -23,6 +23,7 @@ echo "PASS the configured ingestion source host is approved by the guardrail"
 ./scripts/test-source-sim.sh
 ./scripts/test-platform-registry.sh
 ./scripts/test-maintenance.sh
+./scripts/test-ops-dashboard.sh
 
 docker compose run --rm --no-deps superset-init \
   python /app/pythonpath/verify_dev_users.py

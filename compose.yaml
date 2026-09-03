@@ -228,6 +228,8 @@ services:
       # (Trino's own secrets substitution, not shell expansion).
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      # Consumed via ${ENV:PLATFORM_READ_PASSWORD} in config/trino/catalog/platform.properties
+      PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
     ports:
       - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
     volumes:
@@ -321,6 +323,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
+      PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
       # Read by the seed migration so the registered source row matches the
       # database the source-sim service actually serves.
       SOURCE_SIM_DB: ${SOURCE_SIM_DB:-lakehouse_sim}

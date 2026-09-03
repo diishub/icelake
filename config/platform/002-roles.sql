@@ -39,3 +39,18 @@ GRANT INSERT, UPDATE ON ingest.ingest_run            TO platform_app;
 
 -- Identity columns need their sequences.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ingest TO platform_app;
+
+-- Trino reads the control plane through its own login, separate from the
+-- pipeline identity: dashboards need to see run history, and nothing about
+-- showing a dashboard requires the ability to write to it. The password is
+-- set by migrate.sh from the environment.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'platform_trino') THEN
+    CREATE ROLE platform_trino LOGIN;
+  END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE platform TO platform_trino;
+GRANT platform_read TO platform_trino;

@@ -67,6 +67,10 @@ flowchart LR
   dropping an Iceberg table does not delete its files: orphan removal is what
   completes a deletion request, so the identity that performs it is the one
   with the most destructive reach in the stack.
+- The control plane is exposed back through Trino as a read-only `platform`
+  catalog, so the operations dashboard reads run history through the same
+  engine and the same policy as every other query rather than through a second
+  connection to PostgreSQL that OPA would never see.
 - Qdrant is a rebuildable vector index, never the only copy of document text.
 
 ## Access-control flow

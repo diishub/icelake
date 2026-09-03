@@ -281,3 +281,33 @@ test_ingestion_cannot_lower_the_retention_floor if {
     "context": {"identity": {"user": "nifi", "groups": ["psu_ingestion"]}},
   }
 }
+
+test_analyst_can_read_the_control_plane if {
+  allow with input as {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "platform", "schemaName": "ingest", "tableName": "v_table_freshness"}},
+    },
+    "context": {"identity": {"user": "analyst", "groups": ["psu_analyst"]}},
+  }
+}
+
+test_viewer_cannot_read_the_control_plane if {
+  not allow with input as {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "platform", "schemaName": "ingest", "tableName": "ingest_run"}},
+    },
+    "context": {"identity": {"user": "viewer", "groups": ["psu_viewer"]}},
+  }
+}
+
+test_analyst_cannot_write_to_the_control_plane if {
+  not allow with input as {
+    "action": {
+      "operation": "InsertIntoTable",
+      "resource": {"table": {"catalogName": "platform", "schemaName": "ingest", "tableName": "source_system"}},
+    },
+    "context": {"identity": {"user": "analyst", "groups": ["psu_analyst"]}},
+  }
+}

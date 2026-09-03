@@ -240,3 +240,22 @@ allow if {
     "remove_orphan_files_min_retention",
   }
 }
+
+# ---------------------------------------------------------------------------
+# The ingestion control plane, read through Trino
+# ---------------------------------------------------------------------------
+# Operations dashboards read run history through the same engine and the same
+# policy as everything else, rather than through a second connection straight
+# to PostgreSQL that this policy would never see.
+#
+# Analysts and admins can read it; viewers cannot. Run history is operational
+# detail about the platform, not a published data product, and it names source
+# systems and tables a report reader has no reason to see. The catalog itself
+# is read-only at the database level (config/platform/002-roles.sql), so this
+# rule cannot be the only thing standing between a dashboard and a write.
+allow if {
+  is_analyst
+  is_select
+  table.catalogName == "platform"
+  table.schemaName in {"ingest", "information_schema"}
+}
