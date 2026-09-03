@@ -4,6 +4,10 @@ set -eu
 repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "${repo_dir}"
 
+. scripts/lib/trino.sh
+MSYS_NO_PATHCONV=1
+export MSYS_NO_PATHCONV
+
 ./scripts/validate-dev-env.sh
 
 # The host-side guardrail ran inside validate-dev-env.sh above. Run the
@@ -20,6 +24,7 @@ echo "PASS the configured ingestion source host is approved by the guardrail"
 # The synthetic source and the ingestion control plane are part of the
 # acceptance surface too: one holds the cases the pipeline must handle, the
 # other holds the privilege boundary the pipeline runs inside.
+./scripts/test-trino-auth.sh
 ./scripts/test-source-sim.sh
 ./scripts/test-platform-registry.sh
 ./scripts/test-maintenance.sh
@@ -32,23 +37,52 @@ docker compose run --rm --no-deps --entrypoint /bin/sh trino \
 
 docker compose run --rm --no-deps opa test /policies --verbose
 
-docker compose run --rm --no-deps --entrypoint /bin/sh trino -ec '
-  for trino_user in \
-    "${PSU_ADMIN_USERNAME}" \
-    "${PSU_ANALYST_USERNAME}" \
-    "${TRINO_INGESTION_USERNAME}"; do
-    trino --server http://trino:8080 --user "${trino_user}" \
-      --execute "SELECT current_user" >/dev/null
-  done
-  viewer_index=1
-  while [ "${viewer_index}" -le "${PSU_VIEWER_COUNT}" ]; do
-    eval "viewer_username=\${PSU_VIEWER_${viewer_index}_USERNAME}"
-    trino --server http://trino:8080 --user "${viewer_username}" \
-      --execute "SELECT current_user" >/dev/null
-    viewer_index=$((viewer_index + 1))
-  done
-'
-echo "PASS Trino logical dev identities can start authorized queries"
+# Every identity has to prove its username now, so this checks the credential
+# as well as the authorization. Run from the host, one credential at a time,
+# so the query engine container never has to hold them all.
+check_trino_identity() {
+  identity_user="$1"
+  identity_password="$(trino_password_for "$2")"
+  identity_result="$(trino_sql "${identity_user}" "${identity_password}" 'SELECT current_user')"
+  case "${identity_result}" in
+    *"${identity_user}"*) ;;
+    *)
+      echo "Trino identity ${identity_user} could not start an authorized query" >&2
+      printf '%s\n' "${identity_result}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+check_trino_identity "$(grep '^PSU_ADMIN_USERNAME=' .env | cut -d= -f2)" PSU_ADMIN_PASSWORD
+check_trino_identity "$(grep '^PSU_ANALYST_USERNAME=' .env | cut -d= -f2)" PSU_ANALYST_PASSWORD
+check_trino_identity "$(grep '^TRINO_INGESTION_USERNAME=' .env | cut -d= -f2)" TRINO_INGESTION_PASSWORD
+check_trino_identity "$(grep '^TRINO_MAINTENANCE_USERNAME=' .env | cut -d= -f2)" TRINO_MAINTENANCE_PASSWORD
+
+viewer_count="$(grep '^PSU_VIEWER_COUNT=' .env | cut -d= -f2)"
+viewer_index=1
+while [ "${viewer_index}" -le "${viewer_count}" ]; do
+  check_trino_identity \
+    "$(grep "^PSU_VIEWER_${viewer_index}_USERNAME=" .env | cut -d= -f2)" \
+    "PSU_VIEWER_${viewer_index}_PASSWORD"
+  viewer_index=$((viewer_index + 1))
+done
+echo "PASS every Trino identity can authenticate and start an authorized query"
+
+# The property that used to be missing entirely: asserting a username is no
+# longer enough. This is the check that would have caught the exposure that
+# made the guardrail work necessary.
+spoof_result="$(trino_sql "$(grep '^PSU_ADMIN_USERNAME=' .env | cut -d= -f2)" "definitely-not-the-password" 'SELECT 1' || true)"
+case "${spoof_result}" in
+  *"Invalid credentials"*|*"Access Denied"*|*"401"*)
+    echo "PASS Trino refuses an asserted username without its password"
+    ;;
+  *)
+    echo "Trino accepted a query without a valid credential" >&2
+    printf '%s\n' "${spoof_result}" >&2
+    exit 1
+    ;;
+esac
 
 docker compose exec -T nifi /bin/sh -ec \
   'nifi_ip="$(hostname -i)"

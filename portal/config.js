@@ -14,7 +14,7 @@ window.PSU_PORTAL_CONFIG = Object.freeze({
     analytics: Object.freeze({ port: "8088", protocol: "http:", path: "/sqllab/" }),
     users: Object.freeze({ port: "8088", protocol: "http:", path: "/users/list/" }),
     ingestion: Object.freeze({ port: "8443", protocol: "https:", path: "/nifi" }),
-    query: Object.freeze({ port: "8086", protocol: "http:", path: "/" }),
+    query: Object.freeze({ port: "8086", protocol: "https:", path: "/" }),
     vectors: Object.freeze({ port: "6333", protocol: "http:", path: "/dashboard" }),
     storage: Object.freeze({ port: "9001", protocol: "http:", path: "/" })
   })

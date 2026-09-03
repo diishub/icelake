@@ -14,13 +14,14 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
+. scripts/lib/trino.sh
+
 admin_user="$(grep '^PSU_ADMIN_USERNAME=' .env | cut -d= -f2)"
+admin_password="$(trino_password_for PSU_ADMIN_PASSWORD)"
 failures=0
 
 trino_query() {
-  docker compose exec -T -e TU="${admin_user}" trino \
-    trino --server http://trino:8080 --user "${admin_user}" --output-format TSV \
-    --execute "$1" 2>/dev/null | tr -d '"'
+  trino_sql "${admin_user}" "${admin_password}" "$1" --output-format TSV | tr -d '"'
 }
 
 expect_equals() {

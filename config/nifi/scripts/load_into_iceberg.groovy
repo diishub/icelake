@@ -14,12 +14,40 @@
 import groovy.json.JsonSlurper
 import java.sql.DriverManager
 import java.time.Instant
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.X509TrustManager
 
-final TRINO_URL     = "http://trino:8080/v1/statement"
-final TRINO_USER    = System.getenv("TRINO_INGESTION_USERNAME") ?: "nifi"
-final PLATFORM_URL  = "jdbc:postgresql://postgres:5432/platform"
-final PLATFORM_USER = "platform_app"
-final BUCKET        = System.getenv("RUSTFS_BUCKET") ?: "psu-lakehouse"
+final TRINO_URL      = "https://trino:8443/v1/statement"
+final TRINO_USER     = System.getenv("TRINO_INGESTION_USERNAME") ?: "nifi"
+final TRINO_PASSWORD = System.getenv("TRINO_INGESTION_PASSWORD")
+final PLATFORM_URL   = "jdbc:postgresql://postgres:5432/platform"
+final PLATFORM_USER  = "platform_app"
+final BUCKET         = System.getenv("RUSTFS_BUCKET") ?: "psu-lakehouse"
+
+if (!TRINO_PASSWORD) { throw new IllegalStateException("TRINO_INGESTION_PASSWORD is not set") }
+
+// Trino now authenticates over TLS with a certificate this stack generated
+// itself, so there is no chain to validate against. Verification is disabled
+// for this one host rather than globally, and the credential still has to be
+// correct -- the transport is what is unverified here, not the identity.
+final TRUST_SELF_SIGNED = { connection ->
+    if (connection instanceof HttpsURLConnection) {
+        def trustAll = [
+            getAcceptedIssuers: { null },
+            checkClientTrusted: { chain, authType -> },
+            checkServerTrusted: { chain, authType -> },
+        ] as X509TrustManager
+        def context = SSLContext.getInstance("TLS")
+        context.init(null, [trustAll] as javax.net.ssl.TrustManager[], new java.security.SecureRandom())
+        connection.setSSLSocketFactory(context.getSocketFactory())
+        connection.setHostnameVerifier({ hostname, session -> hostname == "trino" } as HostnameVerifier)
+    }
+    def credentials = "${TRINO_USER}:${TRINO_PASSWORD}".getBytes("UTF-8").encodeBase64().toString()
+    connection.setRequestProperty("Authorization", "Basic " + credentials)
+    return connection
+}
 
 def flowFile = session.get()
 if (!flowFile) { return }
@@ -47,9 +75,8 @@ def sourceTableId = (attr("ingest.source.table.id")) as int
 // ---------------------------------------------------------------------------
 def runQuery = { String sql ->
     def slurper = new JsonSlurper()
-    def connection = new URL(TRINO_URL).openConnection()
+    def connection = TRUST_SELF_SIGNED(new URL(TRINO_URL).openConnection())
     connection.setRequestMethod("POST")
-    connection.setRequestProperty("X-Trino-User", TRINO_USER)
     connection.setRequestProperty("Content-Type", "text/plain")
     connection.doOutput = true
     connection.outputStream.withWriter("UTF-8") { it.write(sql) }
@@ -62,8 +89,7 @@ def runQuery = { String sql ->
         }
         if (response.updateCount != null) { updateCount = response.updateCount as Long }
         if (!response.nextUri) { break }
-        def next = new URL(response.nextUri).openConnection()
-        next.setRequestProperty("X-Trino-User", TRINO_USER)
+        def next = TRUST_SELF_SIGNED(new URL(response.nextUri).openConnection())
         response = slurper.parseText(next.inputStream.getText("UTF-8"))
     }
     return updateCount

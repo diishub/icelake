@@ -76,7 +76,7 @@ docker compose ps -a
 |---|---|---|---|
 | Superset | Human local login | username/password ใน `.env`; role ใน `bootstrap_users.py` | สร้างหรือ reconcile 3 personas, password และ role |
 | NiFi | Human/operator single-user login | `NIFI_USERNAME/PASSWORD` | Compose ตั้งค่า; verifier ทดลองขอ token |
-| Trino | Asserted logical username ไม่มี password store | `PSU_*_USERNAME` และ `TRINO_INGESTION_USERNAME` | สร้าง group file, ทดสอบ OPA และ query startup |
+| Trino | Local username/password over TLS (bcrypt password file) | `PSU_*_USERNAME/PASSWORD`, `TRINO_INGESTION_*`, `TRINO_MAINTENANCE_*`, `SUPERSET_TRINO_PASSWORD` | สร้าง password file และ group file, ทดสอบ OPA, ทดสอบว่า login จริงได้และปลอมชื่อไม่ได้ |
 | RustFS | Shared service/root key pair | `RUSTFS_ACCESS_KEY/SECRET_KEY` | ตรวจสิทธิ์เข้าถึง bucket |
 | Polaris | API client principal | `POLARIS_CLIENT_ID/SECRET` | ตรวจ token และ catalog setup |
 | PostgreSQL | Shared metadata DB login | `POSTGRES_USER/PASSWORD` | ตรวจ TCP password login และ role |
@@ -98,10 +98,15 @@ Superset personas ปัจจุบัน:
   เงื่อนไขนี้เพื่อไม่ให้ ingestion identity รับสิทธิ์ admin โดยบังเอิญ
 - username ทั้งสี่ใช้ได้เฉพาะ `[A-Za-z0-9._-]+`, ต้องไม่ซ้ำกัน และห้ามใช้ชื่อ
   `superset` ซึ่งสงวนให้ BI connection
-- `NIFI_USERNAME` คือ login หน้า NiFi แต่ `TRINO_INGESTION_USERNAME` เป็นเพียง
-  logical label สำหรับ authorization เป็นคนละเรื่องกัน
-- Trino ยังไม่มี authenticator จึงเชื่อชื่อที่ client ส่งมา OPA เป็น
-  authorization layer ไม่ใช่ authentication layer ห้าม expose Trino ออก network
+- `NIFI_USERNAME` คือ login หน้า NiFi ส่วน `TRINO_INGESTION_USERNAME` คือ identity
+  ที่ pipeline ใช้ล็อกอินเข้า Trino พร้อมรหัสผ่านของตัวเอง เป็นคนละบัญชีกัน
+- Trino ตรวจรหัสผ่านแล้วผ่าน TLS จากเดิมที่เชื่อชื่อที่ client ส่งมาอย่างเดียว
+  ชื่อผู้ใช้จึงเป็นสิ่งที่ต้องพิสูจน์ ไม่ใช่สิ่งที่ประกาศเอง ส่วน OPA ยังคงเป็น
+  authorization layer เหมือนเดิม ต้องผ่านทั้งสองชั้น ทดสอบด้วย
+  `./scripts/test-trino-auth.sh`
+- ใบรับรองเป็น self-signed ที่ stack สร้างเอง client จึงต้องข้ามการตรวจใบรับรอง
+  (`--insecure`) ชั้นที่ไม่ได้ยืนยันคือ transport ไม่ใช่ตัวตน ใบรับรองจริงเป็น
+  งาน perimeter แยก
 - Superset role คุมความสามารถใน BI UI ส่วน Trino/OPA คุมขอบเขตข้อมูล ต้องผ่าน
   ทั้งสองชั้น
 - Seed จะเขียน role ของสาม dev personas กลับเป็น Admin/Alpha/Gamma ทุกครั้ง
@@ -147,7 +152,7 @@ PostgreSQL, RustFS, Polaris, Qdrant และ MCP ถ้าขั้นใดไ
 |---|---|---|
 | <http://localhost:8085> | ผู้ใช้เริ่มต้น/ทีมพัฒนา | loopback |
 | <http://localhost:8088> | Superset local users | loopback |
-| <http://localhost:8086> | Trino operator | loopback |
+| <https://localhost:8086> | Trino operator | loopback, self-signed cert, password required |
 | <https://localhost:8443/nifi> | ingestion operator | loopback, self-signed cert |
 | <http://localhost:9001> | RustFS operator | loopback |
 | <http://localhost:6333/dashboard> | Qdrant operator | loopback |
@@ -198,7 +203,7 @@ documents ---------> RustFS + rebuildable Qdrant index
 | Gap | ผลกระทบ | งานที่ต้องทำก่อนขยาย scope |
 |---|---|---|
 | ไม่มี named-account provisioner | shared accounts audit รายบุคคลไม่ได้ | ทำ local provision source/workflow หรือ SSO ภายหลัง |
-| Trino ยังไม่ authenticate client | username เป็น asserted value | คง loopback; ทำ trusted proxy/auth ก่อน network exposure |
+| Trino ยังไม่มี SSO | ยังเป็น local password file ไม่ใช่บัญชี PSU | ปิดด้วย PSU OAuth2/OIDC ในเฟส perimeter; password file ถูกแทนที่ ไม่ใช่ต่อยอด |
 | NiFi `conf` ไม่ได้ mount | flow definition อาจไม่รอดการ recreate | export/version flow และทดสอบ restore |
 | incoming mount เป็น read-only อย่างเดียว | ยังไม่มี archive/quarantine lifecycle | ออกแบบ landing, archive, reject และ retention |
 | ไม่มี publisher identity | admin เป็นทางเดียวไป `published` | แยก publisher workflow พร้อม Data Owner approval |

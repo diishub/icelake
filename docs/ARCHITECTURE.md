@@ -32,10 +32,15 @@ flowchart LR
 - PSU Data Hub is a thin, Thai-first guidance layer. It does not authenticate a
   user or grant data access; it keeps ordinary users out of operator consoles
   and sends them to the appropriate authenticated Superset route.
+- Trino authenticates clients with a local password file over TLS. It used to
+  accept whatever username a client asserted, which is why the stack could
+  not be pointed at real data; the username is now proven, not claimed.
+  Authorization is still OPA, and PSU SSO replaces the password file rather
+  than extending it.
 - Superset owns three shared development personas today. NiFi has a separate
-  single-user login. Trino usernames are asserted authorization labels, not
-  authenticated accounts. PSU OAuth2 SSO is deliberately not part of this
-  development phase.
+  single-user login. Trino identities authenticate with a local password file
+  over TLS and are then resolved to groups; the username is proven rather than
+  claimed. PSU OAuth2 SSO is still deliberately not part of this phase.
 - NiFi is the visual ingestion workbench. It replaces Airbyte in this Compose
   deployment because current Airbyte Core is deployed through Kubernetes and
   `abctl`, not a supported Docker Compose topology.

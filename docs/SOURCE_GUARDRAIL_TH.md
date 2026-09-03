@@ -7,8 +7,8 @@
 Stack นี้เป็น development บนเครื่องเดียว และยังขาดการควบคุมที่ข้อมูลส่วนบุคคลจริง
 ต้องการ:
 
-- Trino ยังไม่มี authenticator client ประกาศ username เองได้ OPA เป็นเพียง
-  authorization layer ไม่ใช่ authentication layer
+- Trino ตรวจรหัสผ่านแล้ว (ตั้งแต่ 3 กันยายน 2569) แต่ยังเป็น local password file
+  ไม่ใช่บัญชี PSU และยังไม่มี audit trail รายบุคคล
 - ยังไม่มี PSU SSO บัญชีที่ใช้อยู่เป็น shared development personas
 - ยังไม่มี TLS ระหว่าง service ภายใน
 - ยังไม่เคยทดสอบ backup/restore ของ PostgreSQL + RustFS ให้ผ่านจริง

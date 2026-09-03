@@ -50,6 +50,9 @@ x-superset-common: &superset-common
     PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
     PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
     PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
+    # Superset authenticates to Trino under its own name before impersonating
+    # the signed-in user.
+    SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
     <<: *psu-viewer-identities
     POLARIS_CATALOG: ${POLARIS_CATALOG:-psu}
   volumes:
@@ -211,6 +214,54 @@ services:
       - ./config/trino/render-groups.sh:/bootstrap/render-groups.sh:ro
       - ./runtime/trino:/output
 
+  # Password authentication requires TLS, and a single-host development stack
+  # has no certificate authority. keytool is already in the Trino image, so a
+  # self-signed keystore costs no extra image. A real certificate is perimeter
+  # work, not this.
+  trino-tls-setup:
+    image: trinodb/trino:483
+    restart: "no"
+    environment:
+      TRINO_KEYSTORE_PASSWORD: ${TRINO_KEYSTORE_PASSWORD:?set TRINO_KEYSTORE_PASSWORD in .env}
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        mkdir -p /var/trino/data/tls
+        if [ -f /var/trino/data/tls/trino.p12 ]; then
+          echo "Trino keystore already present"
+          exit 0
+        fi
+        keytool -genkeypair -alias trino -keyalg RSA -keysize 2048 -validity 825           -storetype PKCS12 -keystore /var/trino/data/tls/trino.p12           -storepass "$$TRINO_KEYSTORE_PASSWORD" -keypass "$$TRINO_KEYSTORE_PASSWORD"           -dname "CN=trino, OU=DIIS ISD, O=Prince of Songkla University, C=TH"           -ext "SAN=DNS:trino,DNS:localhost,IP:127.0.0.1"
+        echo "Generated a self-signed keystore for Trino"
+    volumes:
+      - ./runtime/trino:/var/trino/data
+
+  # Renders the bcrypt password file Trino authenticates against. Runs on the
+  # Superset image because it is the only one in this stack that already
+  # carries a bcrypt implementation; adding an image to hash six passwords
+  # would be the worse trade. No plaintext password is written anywhere.
+  trino-password-setup:
+    build:
+      context: .
+      dockerfile: docker/superset/Dockerfile
+    restart: "no"
+    environment:
+      PSU_ADMIN_USERNAME: ${PSU_ADMIN_USERNAME}
+      PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
+      PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
+      PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
+      <<: *psu-viewer-identities
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
+      TRINO_MAINTENANCE_PASSWORD: ${TRINO_MAINTENANCE_PASSWORD:?set TRINO_MAINTENANCE_PASSWORD in .env}
+      SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
+    entrypoint: python
+    command: /render/render-password-file.py
+    volumes:
+      - ./config/trino/render-password-file.py:/render/render-password-file.py:ro
+      - ./runtime/trino:/output
   trino:
     image: trinodb/trino:483
     restart: unless-stopped
@@ -230,8 +281,16 @@ services:
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
       # Consumed via ${ENV:PLATFORM_READ_PASSWORD} in config/trino/catalog/platform.properties
       PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
+      # Consumed via ${ENV:...} in config/trino/config.properties
+      TRINO_KEYSTORE_PASSWORD: ${TRINO_KEYSTORE_PASSWORD:?set TRINO_KEYSTORE_PASSWORD in .env}
+      TRINO_INTERNAL_SECRET: ${TRINO_INTERNAL_SECRET:?set TRINO_INTERNAL_SECRET in .env}
+      # Read by the healthcheck below, which now has to authenticate like any
+      # other client.
+      PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
     ports:
-      - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
+      # HTTPS only on the host. The plain HTTP port stays inside the Compose
+      # network for the discovery URI and refuses authenticated requests.
+      - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8443"
     volumes:
       - ./config/trino:/etc/trino:ro
       - ./runtime/trino:/var/trino/data
@@ -242,12 +301,19 @@ services:
         condition: service_started
       dev-identity-setup:
         condition: service_completed_successfully
+      trino-tls-setup:
+        condition: service_completed_successfully
+      trino-password-setup:
+        condition: service_completed_successfully
     healthcheck:
-      test: [CMD, curl, --fail, http://localhost:8080/v1/info]
+      # Self-signed certificate, so verification is off; the point of this
+      # check is that the server is up and the authenticator accepts a real
+      # credential, not that a local certificate chains to anything.
+      test: [CMD-SHELL, 'curl --fail --silent --insecure --user "$${PSU_ADMIN_USERNAME}:$${PSU_ADMIN_PASSWORD}" https://localhost:8443/v1/info']
       interval: 5s
       timeout: 5s
       retries: 40
-      start_period: 20s
+      start_period: 30s
 
   redis:
     image: redis:7.4.5-alpine
@@ -395,6 +461,7 @@ services:
       PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
       RUSTFS_BUCKET: ${RUSTFS_BUCKET}
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
       SOURCE_SIM_READER_USER: ${SOURCE_SIM_READER_USER:-ingest_reader}
       SOURCE_SIM_READER_PASSWORD: ${SOURCE_SIM_READER_PASSWORD:?set SOURCE_SIM_READER_PASSWORD in .env}
     ports:

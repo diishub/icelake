@@ -39,7 +39,8 @@ chat.
 
 - Superset: <http://localhost:8088>, then use `psu-admin`, `analyst`, or
   `viewer` with the corresponding `.env` password.
-- Trino: <http://localhost:8086>. Override `TRINO_HOST_PORT` in `.env` if that
+- Trino: <https://localhost:8086> (self-signed certificate, sign in with a
+  configured identity). Override `TRINO_HOST_PORT` in `.env` if that
   host port is unavailable; services inside Compose continue to use port 8080.
 - NiFi: <https://localhost:8443/nifi> using `NIFI_USERNAME` / `NIFI_PASSWORD`.
   The local self-signed certificate causes a browser warning.

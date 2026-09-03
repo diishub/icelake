@@ -12,12 +12,22 @@ without duplicating them.
 """
 
 import json
+import os
+from urllib.parse import quote
 
 from superset.app import create_app
 
 DATABASE_NAME = "PSU Platform Ops"
 DASHBOARD_TITLE = "PSU Platform Operations"
 SCHEMA = "ingest"
+
+TRINO_PASSWORD = os.environ["SUPERSET_TRINO_PASSWORD"]
+
+# Self-signed certificate from this stack: the transport is unverified, the
+# identity is not.
+ENGINE_EXTRA = json.dumps(
+    {"engine_params": {"connect_args": {"http_scheme": "https", "verify": False}}}
+)
 
 # Raw-records tables rather than aggregates: an operator reading this wants the
 # rows, including the ones with an awkward status.
@@ -137,7 +147,10 @@ with app.app_context():
 
     # Impersonation is the point: the query reaches Trino as the signed-in
     # user, so OPA decides, not this connection.
-    database.sqlalchemy_uri = "trino://superset@trino:8080/platform"
+    database.sqlalchemy_uri = (
+        f"trino://superset:{quote(TRINO_PASSWORD, safe='')}@trino:8443/platform"
+    )
+    database.extra = ENGINE_EXTRA
     database.impersonate_user = True
     database.expose_in_sqllab = True
     database.allow_ctas = False

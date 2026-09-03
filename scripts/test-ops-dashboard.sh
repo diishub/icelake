@@ -13,6 +13,8 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
+. scripts/lib/trino.sh
+
 failures=0
 
 check() {
@@ -63,26 +65,27 @@ with app.app_context():
 ")"
 
 trino_as() {
-  docker compose exec -T trino trino --server http://trino:8080 --user "$1" \
-    --execute "$2" </dev/null 2>&1 || true
+  trino_sql "$1" "$2" "$3" || true
 }
 
 analyst_user="$(grep '^PSU_ANALYST_USERNAME=' .env | cut -d= -f2)"
+analyst_password="$(trino_password_for PSU_ANALYST_PASSWORD)"
 viewer_user="$(grep '^PSU_VIEWER_1_USERNAME=' .env | cut -d= -f2)"
+viewer_password="$(trino_password_for PSU_VIEWER_1_PASSWORD)"
 
-analyst_read="$(trino_as "${analyst_user}" 'SELECT count(*) FROM platform.ingest.ingest_run')"
+analyst_read="$(trino_as "${analyst_user}" "${analyst_password}" 'SELECT count(*) FROM platform.ingest.ingest_run')"
 case "${analyst_read}" in
   *"Access Denied"*) failures=$((failures + 1)); echo "FAIL an analyst can read run history: ${analyst_read}" >&2 ;;
   *) echo "PASS an analyst can read run history" ;;
 esac
 
-viewer_read="$(trino_as "${viewer_user}" 'SELECT count(*) FROM platform.ingest.ingest_run')"
+viewer_read="$(trino_as "${viewer_user}" "${viewer_password}" 'SELECT count(*) FROM platform.ingest.ingest_run')"
 case "${viewer_read}" in
   *"Access Denied"*) echo "PASS a report viewer cannot read run history" ;;
   *) failures=$((failures + 1)); echo "FAIL a report viewer could read run history" >&2 ;;
 esac
 
-analyst_write="$(trino_as "${analyst_user}" "INSERT INTO platform.ingest.source_system (source_key) VALUES ('x')")"
+analyst_write="$(trino_as "${analyst_user}" "${analyst_password}" "INSERT INTO platform.ingest.source_system (source_key) VALUES ('x')")"
 case "${analyst_write}" in
   *"Access Denied"*) echo "PASS an analyst cannot write to the control plane" ;;
   *) failures=$((failures + 1)); echo "FAIL an analyst write was not denied: ${analyst_write}" >&2 ;;

@@ -12,13 +12,15 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
+. scripts/lib/trino.sh
+
 maintenance_user="$(grep '^TRINO_MAINTENANCE_USERNAME=' .env | cut -d= -f2- || true)"
 maintenance_user="${maintenance_user:-maintenance}"
+maintenance_password="$(trino_password_for TRINO_MAINTENANCE_PASSWORD)"
 failures=0
 
 as_maintenance() {
-  docker compose exec -T trino trino --server http://trino:8080 \
-    --user "${maintenance_user}" --execute "$1" </dev/null 2>&1 || true
+  trino_sql "${maintenance_user}" "${maintenance_password}" "$1" || true
 }
 
 expect_denied() {

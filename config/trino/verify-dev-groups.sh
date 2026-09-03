@@ -36,6 +36,7 @@ done
 {
   printf 'psu_admin:%s\n' "${PSU_ADMIN_USERNAME}"
   printf 'psu_ingestion:%s\n' "${TRINO_INGESTION_USERNAME}"
+  printf 'psu_maintenance:%s\n' "${TRINO_MAINTENANCE_USERNAME}"
   printf 'psu_analyst:%s,superset\n' "${PSU_ANALYST_USERNAME}"
   printf 'psu_viewer:%s\n' "${viewer_usernames}"
   if [ -n "${exec_usernames}" ]; then

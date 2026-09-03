@@ -23,6 +23,8 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
+. scripts/lib/trino.sh
+
 include_orphans=false
 dry_run=false
 min_retention=""
@@ -39,6 +41,7 @@ done
 
 maintenance_user="$(grep '^TRINO_MAINTENANCE_USERNAME=' .env | cut -d= -f2- || true)"
 maintenance_user="${maintenance_user:-maintenance}"
+maintenance_password="$(trino_password_for TRINO_MAINTENANCE_PASSWORD)"
 
 psql_platform() {
   docker compose exec -T postgres /bin/sh -ec \
@@ -55,8 +58,7 @@ if [ -n "${min_retention}" ]; then
 fi
 
 trino_execute() {
-  docker compose exec -T trino trino --server http://trino:8080 \
-    --user "${maintenance_user}" ${session_flags} --execute "$1" </dev/null 2>&1
+  trino_sql "${maintenance_user}" "${maintenance_password}" "$1" ${session_flags}
 }
 
 record() {
