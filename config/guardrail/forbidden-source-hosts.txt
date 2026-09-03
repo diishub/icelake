@@ -1,0 +1,23 @@
+# Ingestion source denylist -- production systems holding real PSU personnel
+# and student records.
+#
+# Entries are matched as domain suffixes, case-insensitively, so a single
+# "example.ac.th" line refuses "db.example.ac.th" too. The whole PSU domain is
+# listed here on purpose: every real PSU system is out of bounds for this
+# stack, and naming one warehouse host at a time only refuses the host someone
+# already thought of. A future approved PSU source has to narrow this entry in
+# a visible commit, which is the friction this file exists to create.
+#
+# Why these are refused at all: this stack has no Trino authenticator, no SSO,
+# no TLS between internal services, and no tested backup/restore, so it is not
+# an approved environment for real personal data regardless of how carefully
+# columns are filtered.
+#
+# A match here refuses the connection even when the same host is present in
+# allowed-source-hosts.txt. The denylist always wins.
+#
+# Removing or narrowing a line is not a routine change. It requires the
+# platform owner and the data owner of that system to agree, in writing, that
+# this environment now meets the controls that system's data requires.
+
+psu.ac.th

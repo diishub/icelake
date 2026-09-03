@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     CSV[CSV files] --> NIFI[Apache NiFi]
-    DB[(Postgres / MySQL / Oracle)] --> NIFI
+    SIM[(source-sim: synthetic Postgres)] --> NIFI
     NIFI --> ICE[Apache Iceberg]
     ICE --- POL[Apache Polaris]
     ICE --- S3[RustFS object storage]
@@ -46,6 +46,21 @@ flowchart LR
   (`hive.raw_staging`, a second file-metastore Trino catalog,
   [`config/trino/catalog/hive.properties`](../config/trino/catalog/hive.properties))
   to bridge into `polaris.raw`.
+- Which database hosts may be used as an ingestion source at all is a
+  committed, reviewable list (`config/guardrail/`), enforced by a `source-guard`
+  service that `nifi` depends on. Production systems holding real personal data
+  are on a denylist that wins over the allowlist, so reaching one would take two
+  visible edits plus a change to this stack's missing controls. See
+  [`SOURCE_GUARDRAIL_TH.md`](SOURCE_GUARDRAIL_TH.md).
+- What gets ingested is decided by the `platform` database (schema `ingest`),
+  not by the NiFi canvas: approved sources, the tables to load, the mirrored
+  column classification, incremental watermarks, and one run record per
+  attempt. The pipeline connects to it as `platform_app`, which can record
+  runs but cannot register a source or enable a table for itself.
+- The ingestion source used for development is `source-sim`, a synthetic
+  Postgres whose rows are all generated (`config/source-sim/`). It carries its
+  own column classification registry so the pipeline's PDPA filtering is
+  exercised against realistic metadata rather than a real system.
 - Qdrant is a rebuildable vector index, never the only copy of document text.
 
 ## Access-control flow

@@ -110,6 +110,7 @@ Passwords are not hard-coded in this README. The source of truth is your local
 | RustFS | value of `RUSTFS_ACCESS_KEY` | `RUSTFS_SECRET_KEY` | Object-storage console and S3 API |
 | Polaris API | value of `POLARIS_CLIENT_ID` | `POLARIS_CLIENT_SECRET` | Catalog bootstrap/API client, not a web login |
 | PostgreSQL | value of `POSTGRES_USER` | `POSTGRES_PASSWORD` | Local metadata database |
+| source-sim | `ingest_reader` | `SOURCE_SIM_READER_PASSWORD` | Read-only login the pipeline uses against the synthetic source; the owner login is `SOURCE_SIM_USER`/`SOURCE_SIM_PASSWORD` |
 | Qdrant API | no username | `QDRANT_API_KEY` | API authentication |
 | Superset MCP | no login in this phase | Deliberately unauthenticated, loopback-only | Executes as the analyst dev persona |
 
@@ -156,6 +157,7 @@ not silently return unfiltered rows — add the column first.
 | Polaris API | <http://localhost:8181> | Internal catalog REST API; not a user interface |
 | Superset MCP | <http://localhost:5008/mcp> | Loopback-only endpoint for a reviewed AI client |
 | PostgreSQL | `127.0.0.1:5432` | Internal Polaris and Superset metadata databases |
+| Synthetic source DB | `127.0.0.1:5433` | Generated stand-in for a source warehouse; the only allowlisted ingestion source |
 
 The portal intentionally does not advertise the operator tools to a normal
 network user. When opened on `localhost`, a platform-team section appears at
@@ -290,6 +292,29 @@ were built and verified end-to-end against a synthetic PostgreSQL source
 during development. Neither flow definition is committed to this repo (same
 "not pre-seeded" policy as above) — rebuild them the same way if lost.
 
+
+**Where to point it**: the stack ships a synthetic source database,
+`source-sim` (see [`config/source-sim/`](config/source-sim/)), whose every row
+is generated. It has the shape of a real PSU warehouse — a
+`meta.db_table`/`meta.db_column` classification registry, lookup tables with
+no personal data, person-level tables with sensitive columns, one table whose
+columns are *all* sensitive, one table withdrawn by its owner, and one table
+with no registry entry at all — so column filtering can be built and proven
+against every one of those cases without a real system being involved. Verify
+it with `./scripts/test-source-sim.sh`.
+
+**Before any database source can be used at all**: the host in
+`PSU_SOURCE_DB_HOST` is checked against
+[`config/guardrail/allowed-source-hosts.txt`](config/guardrail/allowed-source-hosts.txt)
+by the `source-guard` Compose service, which `nifi` depends on — an unlisted
+host stops NiFi from starting, and a host listed in
+[`config/guardrail/forbidden-source-hosts.txt`](config/guardrail/forbidden-source-hosts.txt)
+is refused even if someone also adds it to the allowlist. Production systems
+holding real PSU personnel or student records are on that denylist: this stack
+has no Trino authentication, no SSO, no internal TLS and no tested restore, so
+it is not an approved environment for them regardless of how well columns are
+filtered. See [`docs/SOURCE_GUARDRAIL_TH.md`](docs/SOURCE_GUARDRAIL_TH.md) for
+what has to be approved before a host is added.
 **Ingesting from a real external source with PDPA-sensitive tables**: if the
 source database has its own column-level classification metadata (a
 `meta.db_table`/`meta.db_column` style registry with a `classification`/
@@ -341,6 +366,87 @@ The local MCP service has authentication disabled and executes as the seeded
 analyst identity. It is bound to `127.0.0.1`; never expose it directly to a
 network. Review AI-generated SQL, charts, and dashboards before saving or
 publishing them.
+
+
+### 6.8 The ingestion control plane
+
+What gets ingested is decided by rows in a `platform` database, not by
+whoever is looking at the NiFi canvas. It is created and migrated by a
+one-shot service that is safe to re-run at any time:
+
+```bash
+docker compose run --rm platform-migrate
+```
+
+| Table in schema `ingest` | Holds |
+|---|---|
+| `source_system` | Approved sources. `data_owner`, `lawful_basis` and `retention_note` are `NOT NULL`: a source cannot be registered without them |
+| `source_table` | Which tables to load, into which target, in which mode, and the Iceberg maintenance settings for each |
+| `column_classification` | A mirror of the classification each source publishes about its own columns, with a generated `is_safe` column |
+| `ingest_watermark` | Incremental position per table |
+| `ingest_run` | One row per attempt: status, row counts, columns selected and excluded, skip reason, error |
+
+No credential is stored in this database. A source names the environment
+variable prefix its password lives under (`credentials_env_prefix`), and the
+password stays in the container environment with the rest of this stack's
+secrets.
+
+The pipeline connects as `platform_app`, which can read the registry and
+record runs but cannot register a source, enable a table, or delete its own
+audit trail — verified by `./scripts/test-platform-registry.sh`. Registry
+changes are an operator action.
+
+`is_safe` is a generated column, `classification = 'public' AND secret_level
+= 0`, so the rule exists once. A classification label this platform has never
+seen is not safe, which is the behaviour that matters when a source adds a new
+label later.
+
+To add a table to an existing source, insert a row in `ingest.source_table`.
+To add a source, add its host to
+[`config/guardrail/allowed-source-hosts.txt`](config/guardrail/allowed-source-hosts.txt)
+first — see [`docs/SOURCE_GUARDRAIL_TH.md`](docs/SOURCE_GUARDRAIL_TH.md) for
+what has to be approved — then insert a row in `ingest.source_system`.
+
+
+### 6.9 Running the metadata-driven ingestion flow
+
+The flow is described in source, not clicked together, so it can be rebuilt
+after a container is replaced:
+
+```bash
+./scripts/build-ingest-flow.sh     # create the process group on the canvas
+./scripts/run-ingest-once.sh       # run it once and print the run log
+./scripts/test-ingest-pipeline.sh  # assert what actually landed
+```
+
+Six processors, none of which contain any logic:
+
+```text
+Trigger -> Extract Safe Columns -> PutS3Object (staging) -> Load Into Iceberg -> Log Results
+                     |                      |                      |
+                     +----------------------+----------------------+--> Log Failures
+```
+
+The two `ExecuteGroovyScript` steps point at
+[`config/nifi/scripts/`](config/nifi/scripts/); the decisions live there and in
+the registry, not on the canvas. `Extract Safe Columns` reads
+`ingest.source_table`, mirrors what each source publishes about its own
+columns, and builds a projection from the safe columns alone — there is no
+code path in it that emits `SELECT *`. `Load Into Iceberg` creates the target
+table with four audit columns (`_ingested_at`, `_source_system`,
+`_source_table`, `_run_id`), partitioned by ingest day, and bridges the staged
+CSV in through `hive.raw_staging`.
+
+At most one run per table may be in progress, enforced by a partial unique
+index rather than by a check in the pipeline. This was added after two
+overlapping runs of an incremental table each read the same rows and loaded
+them twice; a run abandoned by a crash is closed by `ingest.close_stale_runs()`
+at the start of the next attempt, so the guard cannot deadlock a table.
+
+What the acceptance test proves against the synthetic source: none of the
+eight personal columns of `hr.employee` exist in `polaris.raw`, the sensitive
+`grade` column was left behind, and the tables with no safe column, with a
+withdrawn registration, and with no registry entry at all were never created.
 
 ## 7. Add or change users
 
@@ -497,6 +603,9 @@ self-signed certificate causes an expected browser warning.
 - Superset users are local test users; PSU OAuth2 SSO is not configured.
 - Superset MCP authentication is disabled and must remain localhost-only.
 - Default/example `.env` values must never protect real data.
+- Database ingestion sources are allowlisted in `config/guardrail/`; production
+  systems holding real personal data are denied outright and the denial is
+  enforced at container start, not only by a script someone has to remember.
 - TLS between internal services, HA, automated backup, and disaster recovery
   are not configured.
 - Never commit `.env` or paste its contents into tickets, chat, or logs.

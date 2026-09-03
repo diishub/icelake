@@ -308,6 +308,69 @@ services:
     volumes:
       - ./runtime/qdrant:/qdrant/storage
 
+  # Creates and migrates the ingestion control-plane database. Run as a
+  # one-shot service rather than a PostgreSQL init script, because this
+  # PostgreSQL instance was initialised long ago and will never run its init
+  # scripts again. Every statement it applies is idempotent.
+  platform-migrate:
+    image: postgres:18.4-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
+      # Read by the seed migration so the registered source row matches the
+      # database the source-sim service actually serves.
+      SOURCE_SIM_DB: ${SOURCE_SIM_DB:-lakehouse_sim}
+    entrypoint: /bin/sh
+    command: /migrations/migrate.sh
+    volumes:
+      - ./config/platform:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+  # A synthetic stand-in for a PSU source warehouse. Every row in it is
+  # generated (config/source-sim/), so ingestion can be built and tested
+  # against a source with the same shape as a real one -- including columns
+  # that must never be ingested -- without a real system being involved. It is
+  # the only entry in config/guardrail/allowed-source-hosts.txt.
+  source-sim:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SOURCE_SIM_USER:-source_sim}
+      POSTGRES_PASSWORD: ${SOURCE_SIM_PASSWORD:?set SOURCE_SIM_PASSWORD in .env}
+      POSTGRES_DB: ${SOURCE_SIM_DB:-lakehouse_sim}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --data-checksums
+      # Read by config/source-sim/03-reader-role.sh to create the read-only
+      # login the pipeline uses. The pipeline never connects as the owner.
+      SOURCE_SIM_READER_PASSWORD: ${SOURCE_SIM_READER_PASSWORD:?set SOURCE_SIM_READER_PASSWORD in .env}
+    ports:
+      - 127.0.0.1:${SOURCE_SIM_HOST_PORT:-5433}:5432
+    volumes:
+      - ./runtime/source-sim:/var/lib/postgresql
+      - ./config/source-sim:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${SOURCE_SIM_USER:-source_sim} -d ${SOURCE_SIM_DB:-lakehouse_sim}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  # Refuses to let ingestion start against a database host that has not been
+  # approved for this stack (config/guardrail/). NiFi depends on it, so an
+  # unapproved source stops the container from starting rather than being
+  # caught later by whoever remembers to run a script. The credentials
+  # themselves are never passed in here -- only a flag saying that some are
+  # set, which is all the half-configured check needs.
+  source-guard:
+    image: alpine/curl:8.21.0
+    restart: "no"
+    environment:
+      PSU_SOURCE_DB_HOST: ${PSU_SOURCE_DB_HOST:-}
+      PSU_SOURCE_DB_CREDENTIALS_PRESENT: ${PSU_SOURCE_DB_PORT:+port}${PSU_SOURCE_DB_NAME:+name}${PSU_SOURCE_DB_USER:+user}${PSU_SOURCE_DB_PASSWORD:+password}
+    entrypoint: /bin/sh
+    command: /guardrail/check-source.sh
+    volumes:
+      - ./config/guardrail:/guardrail:ro
   nifi:
     image: apache/nifi:2.10.0
     restart: unless-stopped
@@ -316,28 +379,45 @@ services:
       SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
       NIFI_WEB_HTTPS_PORT: "8443"
       NIFI_WEB_PROXY_HOST: localhost:8443
-      # Read via System.getenv(...) from ExecuteGroovyScript processors that
-      # need a direct JDBC connection to the source DB (metadata-driven
-      # multi-table ingestion) -- ExecuteGroovyScript has no controller-
-      # service-reference property, unlike DBCPConnectionPool-backed
-      # processors, so this is the same env-var pattern already used
-      # throughout this compose file for every other credential.
-      PSU_SOURCE_DB_HOST: ${PSU_SOURCE_DB_HOST:-}
-      PSU_SOURCE_DB_PORT: ${PSU_SOURCE_DB_PORT:-}
-      PSU_SOURCE_DB_NAME: ${PSU_SOURCE_DB_NAME:-}
-      PSU_SOURCE_DB_USER: ${PSU_SOURCE_DB_USER:-}
-      PSU_SOURCE_DB_PASSWORD: ${PSU_SOURCE_DB_PASSWORD:-}
+      # Read via System.getenv(...) from the ExecuteGroovyScript processors in
+      # config/nifi/scripts. ExecuteGroovyScript has no controller-service
+      # reference property, unlike DBCPConnectionPool-backed processors, so
+      # this is the same env-var pattern used for every other credential here.
+      #
+      # No source hostname or database name appears below: those come from the
+      # ingest.source_system registry, and each source names the prefix its
+      # own credentials live under (credentials_env_prefix).
+      PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET}
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      SOURCE_SIM_READER_USER: ${SOURCE_SIM_READER_USER:-ingest_reader}
+      SOURCE_SIM_READER_PASSWORD: ${SOURCE_SIM_READER_PASSWORD:?set SOURCE_SIM_READER_PASSWORD in .env}
     ports:
       - 127.0.0.1:8443:8443
     volumes:
       - ./data/incoming:/data/incoming:ro
       - ./drivers:/opt/nifi/nifi-current/drivers:ro
+      # Ingestion logic lives in the repository, not pasted into the canvas.
+      - ./config/nifi/scripts:/opt/nifi/nifi-current/ingest-scripts:ro
+      # The pipeline re-checks the source host against the same lists the
+      # source-guard service uses, so a registry row alone cannot reach an
+      # unapproved host.
+      - ./config/guardrail:/guardrail:ro
       - ./runtime/nifi/database_repository:/opt/nifi/nifi-current/database_repository
       - ./runtime/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
       - ./runtime/nifi/content_repository:/opt/nifi/nifi-current/content_repository
       - ./runtime/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
       - ./runtime/nifi/state:/opt/nifi/nifi-current/state
+      # Mounted so the flow definition survives a container recreate. Populate it
+      # once from the image before first use:
+      #   docker compose cp nifi:/opt/nifi/nifi-current/conf ./runtime/nifi/conf
+      # An empty host directory here would hide the image's own configuration and
+      # NiFi would not start.
+      - ./runtime/nifi/conf:/opt/nifi/nifi-current/conf
       - ./runtime/nifi/logs:/opt/nifi/nifi-current/logs
+    depends_on:
+      source-guard:
+        condition: service_completed_successfully
 
   psu-portal:
     image: nginx:1.29.1-alpine

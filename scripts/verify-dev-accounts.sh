@@ -6,6 +6,23 @@ cd "${repo_dir}"
 
 ./scripts/validate-dev-env.sh
 
+# The host-side guardrail ran inside validate-dev-env.sh above. Run the
+# container-side one too, so a broken mount or a missing dependency in
+# compose.yaml is caught here rather than at the next `docker compose up`.
+docker compose run --rm --no-deps source-guard >/dev/null
+echo "PASS the configured ingestion source host is approved by the guardrail"
+
+# .env is only one of the two ways a source can be configured. Check what
+# the live NiFi canvas is pointed at as well, and keep a copy of the flow
+# definition while doing it.
+./scripts/check-nifi-sources.sh
+
+# The synthetic source and the ingestion control plane are part of the
+# acceptance surface too: one holds the cases the pipeline must handle, the
+# other holds the privilege boundary the pipeline runs inside.
+./scripts/test-source-sim.sh
+./scripts/test-platform-registry.sh
+
 docker compose run --rm --no-deps superset-init \
   python /app/pythonpath/verify_dev_users.py
 docker compose run --rm --no-deps --entrypoint /bin/sh trino \

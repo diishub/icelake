@@ -39,6 +39,9 @@ SUPERSET_SECRET_KEY
 QDRANT_API_KEY
 NIFI_USERNAME
 NIFI_PASSWORD
+SOURCE_SIM_PASSWORD
+SOURCE_SIM_READER_PASSWORD
+PLATFORM_DB_PASSWORD
 "
 
 viewer_count_value="$(awk -v key="PSU_VIEWER_COUNT" 'index($0, key "=") == 1 {sub("^[^=]*=", ""); print}' .env)"
@@ -94,6 +97,23 @@ for variable_name in ${required_variables}; do
       ;;
   esac
 done
+
+# Ingestion source guardrail. This runs the same check the `source-guard`
+# Compose service runs, from the same file, so the host-side and container-
+# side rules cannot drift apart. Commented-out PSU_SOURCE_DB_* lines are not
+# matched, so an unconfigured source stays disabled and passes.
+source_db_host="$(awk -v key="PSU_SOURCE_DB_HOST" 'index($0, key "=") == 1 {sub("^[^=]*=", ""); print}' .env)"
+source_db_credentials_present=""
+for variable_name in PSU_SOURCE_DB_PORT PSU_SOURCE_DB_NAME PSU_SOURCE_DB_USER PSU_SOURCE_DB_PASSWORD; do
+  if [ -n "$(awk -v key="${variable_name}" 'index($0, key "=") == 1 {sub("^[^=]*=", ""); print}' .env)" ]; then
+    source_db_credentials_present="set"
+  fi
+done
+
+PSU_SOURCE_DB_HOST="${source_db_host}" \
+PSU_SOURCE_DB_CREDENTIALS_PRESENT="${source_db_credentials_present}" \
+GUARDRAIL_DIR="${repo_dir}/config/guardrail" \
+  sh config/guardrail/check-source.sh
 
 docker compose config --quiet
 echo "PASS .env contains every required non-placeholder development setting"

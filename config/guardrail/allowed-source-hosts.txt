@@ -1,0 +1,17 @@
+# Ingestion source allowlist.
+#
+# This stack may open a database connection to a host ONLY if that host is
+# listed here, one hostname per line. Anything not listed is refused, so an
+# empty or missing entry fails closed rather than defaulting to "connect".
+#
+# Adding a line is a reviewable change, not a configuration tweak. Before
+# adding a host, record the following in the pull request:
+#
+#   - the data owner who approved the extraction
+#   - the lawful basis under the Thai PDPA and the retention period
+#   - the minimum set of tables and columns actually needed
+#
+# A host that appears in forbidden-source-hosts.txt is refused even if it is
+# also listed here. The denylist always wins.
+
+source-sim
