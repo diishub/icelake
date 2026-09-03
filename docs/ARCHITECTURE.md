@@ -61,6 +61,12 @@ flowchart LR
   Postgres whose rows are all generated (`config/source-sim/`). It carries its
   own column classification registry so the pipeline's PDPA filtering is
   exercised against realistic metadata rather than a real system.
+- Table maintenance runs as its own Trino identity (`psu_maintenance`), which
+  can compact, expire snapshots and delete orphaned files but cannot read a
+  column of the data it maintains. That separation matters here because
+  dropping an Iceberg table does not delete its files: orphan removal is what
+  completes a deletion request, so the identity that performs it is the one
+  with the most destructive reach in the stack.
 - Qdrant is a rebuildable vector index, never the only copy of document text.
 
 ## Access-control flow

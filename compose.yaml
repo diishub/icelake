@@ -204,6 +204,7 @@ services:
       PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
     entrypoint: /bin/sh
     command: /bootstrap/render-groups.sh
     volumes:
@@ -222,6 +223,7 @@ services:
       PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
       # Consumed via ${ENV:RUSTFS_ACCESS_KEY} in config/trino/catalog/hive.properties
       # (Trino's own secrets substitution, not shell expansion).
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}

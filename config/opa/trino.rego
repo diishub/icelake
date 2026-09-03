@@ -158,3 +158,85 @@ rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
   table.tableName in data.org_scoped_tables
   some ou in viewer_org_units
 }
+
+# ---------------------------------------------------------------------------
+# Table maintenance
+# ---------------------------------------------------------------------------
+# Compaction, snapshot expiry and orphan-file removal run as their own
+# identity, separate from ingestion. That separation is the point: this
+# identity reshapes and deletes files but is never granted SelectFromColumns,
+# so a maintenance job cannot read a single row of the data it maintains.
+#
+# It matters for more than tidiness here. Dropping an Iceberg table in this
+# stack does not delete its data files, so removing personal data on request
+# is only actually complete once orphan-file removal has run.
+is_maintenance if "psu_maintenance" in groups
+
+# Trino has used more than one operation name for ALTER TABLE ... EXECUTE
+# across versions; both are listed so an upgrade does not silently start
+# denying maintenance.
+maintenance_operations := {
+  "ExecuteTableProcedure",
+  "AlterTableExecute",
+}
+
+allow if {
+  is_maintenance
+  operation in maintenance_operations
+  table.catalogName == "polaris"
+  table.schemaName in {"raw", "curated", "published"}
+}
+
+# Maintenance still has to be able to start a query and list what exists.
+allow if {
+  is_maintenance
+  operation in read_control_operations
+}
+
+# Reading the table list is metadata, not data: information_schema stays
+# available so a maintenance run can discover the tables it was asked about.
+allow if {
+  is_maintenance
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName == "information_schema"
+}
+
+# Trino authorises ALTER TABLE ... EXECUTE by asking a SelectFromColumns
+# question with an empty column list, not only the procedure question above
+# (verified live against Trino 483: the denial was "Cannot select from columns
+# [] in table"). Allowing only the empty-column form keeps the property that
+# matters -- a request naming any column is a real read and stays denied, so
+# maintenance still cannot see a single value.
+maintenance_schemas := {"raw", "curated", "published"}
+
+allow if {
+  is_maintenance
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName in maintenance_schemas
+  count(object.get(table, "columns", [])) == 0
+}
+
+# Rewriting data files is what compaction is: the procedure shows up as
+# inserts and deletes against the same table.
+allow if {
+  is_maintenance
+  operation in {"InsertIntoTable", "DeleteFromTable"}
+  table.catalogName == "polaris"
+  table.schemaName in maintenance_schemas
+}
+
+# The retention floor exists so a mistyped threshold cannot delete files a
+# running query still needs. Lowering it is a deliberate, authorised act, and
+# it is scoped: maintenance may set only these two properties, only on the
+# lakehouse catalog, and nothing else gains the ability at all.
+allow if {
+  is_maintenance
+  operation == "SetCatalogSessionProperty"
+  input.action.resource.catalogSessionProperty.catalogName == "polaris"
+  input.action.resource.catalogSessionProperty.propertyName in {
+    "expire_snapshots_min_retention",
+    "remove_orphan_files_min_retention",
+  }
+}

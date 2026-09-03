@@ -22,6 +22,7 @@ echo "PASS the configured ingestion source host is approved by the guardrail"
 # other holds the privilege boundary the pipeline runs inside.
 ./scripts/test-source-sim.sh
 ./scripts/test-platform-registry.sh
+./scripts/test-maintenance.sh
 
 docker compose run --rm --no-deps superset-init \
   python /app/pythonpath/verify_dev_users.py

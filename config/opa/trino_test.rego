@@ -191,3 +191,93 @@ test_unknown_user_is_denied if {
     "action": {"operation": "ExecuteQuery", "resource": {}},
   }
 }
+
+test_maintenance_can_run_table_procedure if {
+  allow with input as {
+    "action": {
+      "operation": "ExecuteTableProcedure",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "sim_hr_employee"}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_maintenance_cannot_read_rows if {
+  not allow with input as {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "sim_hr_employee", "columns": ["employee_id", "department_id"]}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_maintenance_cannot_run_procedure_on_another_catalog if {
+  not allow with input as {
+    "action": {
+      "operation": "ExecuteTableProcedure",
+      "resource": {"table": {"catalogName": "hive", "schemaName": "raw_staging", "tableName": "stg_x"}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_ingestion_cannot_run_table_procedure if {
+  not allow with input as {
+    "action": {
+      "operation": "ExecuteTableProcedure",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "sim_hr_employee"}},
+    },
+    "context": {"identity": {"user": "nifi", "groups": ["psu_ingestion_only_procedures"]}},
+  }
+}
+
+test_maintenance_may_pass_the_empty_column_check if {
+  allow with input as {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "sim_hr_employee", "columns": []}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_maintenance_cannot_read_a_named_column if {
+  not allow with input as {
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "sim_hr_employee", "columns": ["employee_id"]}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_maintenance_may_lower_the_retention_floor if {
+  allow with input as {
+    "action": {
+      "operation": "SetCatalogSessionProperty",
+      "resource": {"catalogSessionProperty": {"catalogName": "polaris", "propertyName": "remove_orphan_files_min_retention"}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_maintenance_cannot_set_any_other_session_property if {
+  not allow with input as {
+    "action": {
+      "operation": "SetCatalogSessionProperty",
+      "resource": {"catalogSessionProperty": {"catalogName": "polaris", "propertyName": "projection_pushdown_enabled"}},
+    },
+    "context": {"identity": {"user": "maintenance", "groups": ["psu_maintenance"]}},
+  }
+}
+
+test_ingestion_cannot_lower_the_retention_floor if {
+  not allow with input as {
+    "action": {
+      "operation": "SetCatalogSessionProperty",
+      "resource": {"catalogSessionProperty": {"catalogName": "polaris", "propertyName": "remove_orphan_files_min_retention"}},
+    },
+    "context": {"identity": {"user": "nifi", "groups": ["psu_ingestion"]}},
+  }
+}
