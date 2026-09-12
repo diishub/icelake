@@ -55,6 +55,24 @@ x-superset-common: &superset-common
     SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
     <<: *psu-viewer-identities
     POLARIS_CATALOG: ${POLARIS_CATALOG:-psu}
+    # PSU Passport for the report workspace. Off unless SUPERSET_OAUTH_ENABLED
+    # is true, so a machine with no registered OIDC client keeps its local
+    # accounts. The redirect URI to register is
+    # <SUPERSET_PUBLIC_ORIGIN>/oauth-authorized/psu
+    SUPERSET_OAUTH_ENABLED: ${SUPERSET_OAUTH_ENABLED:-false}
+    SUPERSET_OAUTH_ISSUER: ${SUPERSET_OAUTH_ISSUER:-${OIDC_ISSUER:-}}
+    SUPERSET_OAUTH_CLIENT_ID: ${SUPERSET_OAUTH_CLIENT_ID:-}
+    SUPERSET_OAUTH_CLIENT_SECRET: ${SUPERSET_OAUTH_CLIENT_SECRET:-}
+    SUPERSET_OAUTH_SCOPE: ${SUPERSET_OAUTH_SCOPE:-openid profile email}
+    SUPERSET_OAUTH_USERNAME_CLAIM: ${SUPERSET_OAUTH_USERNAME_CLAIM:-preferred_username}
+    SUPERSET_OAUTH_NAME_CLAIM: ${SUPERSET_OAUTH_NAME_CLAIM:-name}
+    SUPERSET_OAUTH_EMAIL_CLAIM: ${SUPERSET_OAUTH_EMAIL_CLAIM:-email}
+    SUPERSET_OAUTH_DEFAULT_ROLE: ${SUPERSET_OAUTH_DEFAULT_ROLE:-Gamma}
+    SUPERSET_OAUTH_ROLE_SYNC: ${SUPERSET_OAUTH_ROLE_SYNC:-false}
+    SUPERSET_OAUTH_ADMIN_GROUP: ${SUPERSET_OAUTH_ADMIN_GROUP:-psu-data-hub-admin}
+    SUPERSET_OAUTH_ANALYST_GROUP: ${SUPERSET_OAUTH_ANALYST_GROUP:-psu-data-hub-analyst}
+    SUPERSET_OAUTH_VIEWER_GROUP: ${SUPERSET_OAUTH_VIEWER_GROUP:-psu-data-hub-viewer}
+    SUPERSET_COOKIE_SECURE: ${SUPERSET_COOKIE_SECURE:-true}
   volumes:
     - ./config/superset:/app/pythonpath:ro
     - ./runtime/superset:/app/superset_home
@@ -281,6 +299,7 @@ services:
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
       # Consumed via ${ENV:PLATFORM_READ_PASSWORD} in config/trino/catalog/platform.properties
       PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
       # Consumed via ${ENV:...} in config/trino/config.properties
       TRINO_KEYSTORE_PASSWORD: ${TRINO_KEYSTORE_PASSWORD:?set TRINO_KEYSTORE_PASSWORD in .env}
       TRINO_INTERNAL_SECRET: ${TRINO_INTERNAL_SECRET:?set TRINO_INTERNAL_SECRET in .env}
@@ -390,6 +409,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
       PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
       # Read by the seed migration so the registered source row matches the
       # database the source-sim service actually serves.
       SOURCE_SIM_DB: ${SOURCE_SIM_DB:-lakehouse_sim}
@@ -491,6 +511,51 @@ services:
       source-guard:
         condition: service_completed_successfully
 
+
+  # Sign-in for the portal. Behind a profile because it cannot start without a
+  # registered PSU Passport client, and the rest of the stack must still come
+  # up on a machine that has none:
+  #
+  #   docker compose --profile auth up -d psu-auth
+  #
+  # nginx resolves this name at request time, so the portal serves normally
+  # whether or not this container is running; /auth/me simply fails and the
+  # portal hides the sign-in controls.
+  psu-auth:
+    build:
+      context: ./services/auth
+    profiles: [auth]
+    restart: unless-stopped
+    environment:
+      AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-http://localhost:8085}
+      AUTH_PORT: "8087"
+      AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-28800}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      # PSU Passport. Registered per deployment; the redirect URI the client is
+      # registered with must be AUTH_PUBLIC_ORIGIN + /auth/callback.
+      # Validated by the service at start-up rather than by Compose: an unset
+      # variable here would stop the whole stack, including the services that
+      # have nothing to do with sign-in.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_USERNAME_CLAIM: ${OIDC_USERNAME_CLAIM:-preferred_username}
+      OIDC_NAME_CLAIM: ${OIDC_NAME_CLAIM:-name}
+      OIDC_EMAIL_CLAIM: ${OIDC_EMAIL_CLAIM:-email}
+      OIDC_CAMPUS_CLAIM: ${OIDC_CAMPUS_CLAIM:-}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-}
+      # PSU API gateway. Keys are read here and never reach the browser, a log
+      # line or the database.
+      API_PSU_GATEWAY: ${API_PSU_GATEWAY:-https://api-gateway.psu.ac.th:8443}
+      API_STUDENT_KEY: ${API_STUDENT_KEY:-}
+      API_STAFF_KEY: ${API_STAFF_KEY:-}
+      PSU_CAMPUS_CODES: ${PSU_CAMPUS_CODES:-}
+      PSU_API_TIMEOUT_MS: ${PSU_API_TIMEOUT_MS:-5000}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
   psu-portal:
     image: nginx:1.29.1-alpine
     restart: unless-stopped

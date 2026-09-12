@@ -11,6 +11,7 @@ set -eu
 : "${PGPASSWORD:?POSTGRES_PASSWORD must be passed in as PGPASSWORD}"
 : "${PLATFORM_DB_PASSWORD:?PLATFORM_DB_PASSWORD must be set for the platform_app role}"
 : "${PLATFORM_READ_PASSWORD:?PLATFORM_READ_PASSWORD must be set for the platform_trino role}"
+: "${IDENTITY_DB_PASSWORD:?IDENTITY_DB_PASSWORD must be set for the identity_app role}"
 
 platform_db="platform"
 psql_admin="psql --host postgres --username ${POSTGRES_USER} --set ON_ERROR_STOP=1 --no-psqlrc"
@@ -42,10 +43,12 @@ done
 # where :'name' interpolation applies and psql does the quoting.
 ${psql_admin} --dbname "${platform_db}" --quiet \
   --set app_password="${PLATFORM_DB_PASSWORD}" \
-  --set read_password="${PLATFORM_READ_PASSWORD}" --file - >/dev/null <<'STATEMENT'
+  --set read_password="${PLATFORM_READ_PASSWORD}" \
+  --set identity_password="${IDENTITY_DB_PASSWORD}" --file - >/dev/null <<'STATEMENT'
 ALTER ROLE platform_app PASSWORD :'app_password';
 ALTER ROLE platform_trino PASSWORD :'read_password';
+ALTER ROLE identity_app PASSWORD :'identity_password';
 STATEMENT
-echo "platform_app and platform_trino passwords applied"
+echo "platform_app, platform_trino and identity_app passwords applied"
 
 echo "platform control-plane migration complete"

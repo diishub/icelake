@@ -16,6 +16,87 @@ WELCOME_PAGE_LAST_TAB = "all"
 AUTH_TYPE = AUTH_DB
 AUTH_USER_REGISTRATION = False
 
+# ---------------------------------------------------------------------------
+# PSU Passport sign-in
+# ---------------------------------------------------------------------------
+#
+# Off unless SUPERSET_OAUTH_ENABLED is true, so a machine with no registered
+# OIDC client keeps the local accounts and starts normally. When it is on,
+# database login is replaced rather than added to: two ways in would mean two
+# sets of credentials to govern for the same person.
+#
+# The redirect URI to register with PSU Passport is
+#   <SUPERSET_PUBLIC_ORIGIN>/oauth-authorized/psu
+# which is a different path from the portal's, so either register both on one
+# client or use a second client. Both are normal.
+SUPERSET_OAUTH_ENABLED = os.environ.get("SUPERSET_OAUTH_ENABLED", "false").lower() == "true"
+
+if SUPERSET_OAUTH_ENABLED:
+    from flask_appbuilder.security.manager import AUTH_OAUTH
+
+    from psu_security_manager import PsuSecurityManager
+
+    def _required(name: str) -> str:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            raise RuntimeError(f"{name} is required when SUPERSET_OAUTH_ENABLED is true")
+        return value
+
+    AUTH_TYPE = AUTH_OAUTH
+    CUSTOM_SECURITY_MANAGER = PsuSecurityManager
+
+    # A person who has never signed in has no Superset account, so registration
+    # has to be on. The role it hands out is the read-only one; it grants no
+    # data, because data access is decided by Trino and OPA from the grants in
+    # identity.app_user, not by a Superset role.
+    AUTH_USER_REGISTRATION = True
+    AUTH_USER_REGISTRATION_ROLE = os.environ.get("SUPERSET_OAUTH_DEFAULT_ROLE", "Gamma")
+
+    # Left off deliberately. With role sync on, every promotion an administrator
+    # makes in Superset is reverted at the person's next sign-in, because the
+    # mapping below is the only input. Turn it on only once PSU Passport
+    # actually carries the roles this deployment uses.
+    AUTH_ROLES_SYNC_AT_LOGIN = (
+        os.environ.get("SUPERSET_OAUTH_ROLE_SYNC", "false").lower() == "true"
+    )
+
+    # Read only when role sync is on. The claim is a list of group names from
+    # PSU Passport; anything unmapped falls back to the registration role.
+    AUTH_ROLES_MAPPING = {
+        os.environ.get("SUPERSET_OAUTH_ADMIN_GROUP", "psu-data-hub-admin"): ["Admin"],
+        os.environ.get("SUPERSET_OAUTH_ANALYST_GROUP", "psu-data-hub-analyst"): ["Alpha"],
+        os.environ.get("SUPERSET_OAUTH_VIEWER_GROUP", "psu-data-hub-viewer"): ["Gamma"],
+    }
+
+    OAUTH_PROVIDERS = [
+        {
+            "name": "psu",
+            "icon": "fa-university",
+            "token_key": "access_token",
+            "remote_app": {
+                "client_id": _required("SUPERSET_OAUTH_CLIENT_ID"),
+                "client_secret": _required("SUPERSET_OAUTH_CLIENT_SECRET"),
+                "server_metadata_url": _required("SUPERSET_OAUTH_ISSUER").rstrip("/")
+                + "/.well-known/openid-configuration",
+                "api_base_url": _required("SUPERSET_OAUTH_ISSUER").rstrip("/") + "/",
+                "client_kwargs": {
+                    "scope": os.environ.get("SUPERSET_OAUTH_SCOPE", "openid profile email"),
+                    # PKCE on a confidential client costs nothing and removes
+                    # code interception from the list of things to worry about.
+                    "code_challenge_method": "S256",
+                },
+            },
+        }
+    ]
+
+    # The session cookie is what an OAuth login leaves behind, so it gets the
+    # same treatment as the portal's.
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = (
+        os.environ.get("SUPERSET_COOKIE_SECURE", "true").lower() == "true"
+    )
+
 FEATURE_FLAGS = {
     "DASHBOARD_RBAC": True,
     "CACHE_IMPERSONATION": True,

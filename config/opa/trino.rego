@@ -87,12 +87,23 @@ allow if {
   table.schemaName in {"curated", "published"}
 }
 
+# A viewer reads published only once their scope is known: either they are an
+# executive viewer, or they carry at least one org-unit group. A viewer with
+# neither used to fall through to this rule unfiltered, because the row-filter
+# rule below produces nothing when viewer_org_units is empty -- so the absence
+# of a scope granted the widest view instead of the narrowest. Single sign-on
+# users arrive with no org group at all, which is what surfaced it.
 allow if {
   is_viewer
   is_select
   table.catalogName == "polaris"
   table.schemaName == "published"
+  viewer_is_scoped
 }
+
+viewer_is_scoped if is_viewer_exec
+
+viewer_is_scoped if count(viewer_org_units) > 0
 
 # Analysts additionally get row-level write access on curated and published —
 # schema/table DDL (CreateTable, DropTable, ...) stays admin/ingestion-only.

@@ -2,7 +2,11 @@ package trino
 
 import rego.v1
 
-viewer_context := {"context": {"identity": {"user": "viewer", "groups": ["psu_viewer"]}}}
+# A viewer as render-groups.sh actually produces one: always either scoped to
+# an org unit or marked executive. The unscoped variant below is a state only a
+# single sign-on account reaches, and the policy denies published reads for it.
+viewer_context := {"context": {"identity": {"user": "viewer", "groups": ["psu_viewer", "psu_viewer_org_sci"]}}}
+viewer_unscoped_context := {"context": {"identity": {"user": "viewer", "groups": ["psu_viewer"]}}}
 viewer_exec_context := {"context": {"identity": {"user": "exec-viewer", "groups": ["psu_viewer", "psu_viewer_exec"]}}}
 viewer_eng_context := {"context": {"identity": {"user": "viewer-eng", "groups": ["psu_viewer", "psu_viewer_org_eng"]}}}
 analyst_context := {"context": {"identity": {"user": "analyst", "groups": ["psu_analyst"]}}}
@@ -102,7 +106,7 @@ test_viewer_exec_no_row_filter_on_scoped_table if {
 
 test_viewer_no_org_group_no_row_filter if {
   count(rowFilters) == 0
-    with input as object.union(viewer_context, {"action": {
+    with input as object.union(viewer_unscoped_context, {"action": {
       "operation": "GetRowFilters",
       "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
     }})
@@ -309,5 +313,57 @@ test_analyst_cannot_write_to_the_control_plane if {
       "resource": {"table": {"catalogName": "platform", "schemaName": "ingest", "tableName": "source_system"}},
     },
     "context": {"identity": {"user": "analyst", "groups": ["psu_analyst"]}},
+  }
+}
+
+# ---------------------------------------------------------------------------
+# A viewer with no scope reads nothing
+# ---------------------------------------------------------------------------
+# The row filter is produced per org unit, so a viewer carrying no org group
+# produced no filter and therefore an unfiltered read. Single sign-on accounts
+# arrive in exactly that state, so this is asserted rather than assumed.
+
+test_unscoped_viewer_cannot_select_published if {
+  not allow with input as {
+    "context": {"identity": {"user": "sso.user", "groups": ["psu_viewer"]}},
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {
+        "catalogName": "polaris",
+        "schemaName": "published",
+        "tableName": "anything",
+        "columns": ["a"],
+      }},
+    },
+  }
+}
+
+test_scoped_viewer_still_selects_published if {
+  allow with input as {
+    "context": {"identity": {"user": "viewer.one", "groups": ["psu_viewer", "psu_viewer_org_medicine"]}},
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {
+        "catalogName": "polaris",
+        "schemaName": "published",
+        "tableName": "anything",
+        "columns": ["a"],
+      }},
+    },
+  }
+}
+
+test_executive_viewer_still_selects_published if {
+  allow with input as {
+    "context": {"identity": {"user": "viewer.exec", "groups": ["psu_viewer", "psu_viewer_exec"]}},
+    "action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {
+        "catalogName": "polaris",
+        "schemaName": "published",
+        "tableName": "anything",
+        "columns": ["a"],
+      }},
+    },
   }
 }
