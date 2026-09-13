@@ -8,20 +8,29 @@
  */
 import fs from "node:fs";
 
-const html = fs.readFileSync("index.html", "utf8");
-const app = fs.readFileSync("app.js", "utf8");
+// Every page that loads the i18n runtime, and the script that drives each one.
+// A new page is covered automatically as soon as it is added to this list.
+const pages = [
+  ["index.html", "app.js"],
+  ["login.html", "login.js"],
+];
 
 const used = new Set();
-for (const match of html.matchAll(/data-i18n="([^"]+)"/g)) {
-  used.add(match[1]);
-}
-for (const match of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
-  for (const pair of match[1].split(",")) {
-    used.add(pair.split(":")[1].trim());
+for (const [htmlFile, jsFile] of pages) {
+  const html = fs.readFileSync(htmlFile, "utf8");
+  const script = fs.readFileSync(jsFile, "utf8");
+
+  for (const match of html.matchAll(/data-i18n="([^"]+)"/g)) {
+    used.add(match[1]);
   }
-}
-for (const match of app.matchAll(/\bt\("([^"]+)"/g)) {
-  used.add(match[1]);
+  for (const match of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
+    for (const pair of match[1].split(",")) {
+      used.add(pair.split(":")[1].trim());
+    }
+  }
+  for (const match of script.matchAll(/\bt\("([^"]+)"/g)) {
+    used.add(match[1]);
+  }
 }
 
 // Keys the code builds at run time from a template literal, which the scan

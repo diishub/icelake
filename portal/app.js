@@ -673,7 +673,11 @@
   }
 
   function signInHref() {
-    return `/auth/login?next=${encodeURIComponent(currentPath())}`;
+    // The dedicated login page, not /auth/login directly: it offers PSU
+    // Passport and email-and-password from one place, and knows how to
+    // disable the PSU Passport option gracefully when that service is not
+    // configured. It reads its own "next" from this query string.
+    return `/login?next=${encodeURIComponent(currentPath())}`;
   }
 
   function renderAccount() {

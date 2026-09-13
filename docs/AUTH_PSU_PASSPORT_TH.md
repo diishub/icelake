@@ -1,7 +1,8 @@
-# เข้าสู่ระบบด้วย PSU Passport
+# เข้าสู่ระบบด้วย PSU Passport และอีเมล/รหัสผ่าน
 
-เอกสารนี้อธิบายวิธีเปิดใช้การเข้าสู่ระบบของ portal ผ่าน PSU Passport
-และบันทึกการประมวลผลข้อมูลส่วนบุคคลที่เกี่ยวข้อง
+เอกสารนี้อธิบายวิธีเปิดใช้การเข้าสู่ระบบของ portal ทั้งสองทาง — PSU Passport
+(OIDC) และอีเมลกับรหัสผ่าน (สร้างบัญชีโดยผู้ดูแลเท่านั้น) — และบันทึกการประมวลผล
+ข้อมูลส่วนบุคคลที่เกี่ยวข้อง
 
 ## ทำไมต้องมี service เพิ่ม
 
@@ -10,11 +11,24 @@ confidential client ที่ถือ `client_secret` แลก authorization c
 และถือ session ไว้ฝั่งเซิร์ฟเวอร์
 
 portal เป็นไฟล์ static หลัง nginx ทำสามอย่างนั้นไม่ได้เลย จึงมี service ชื่อ
-`psu-auth` ทำหน้าที่นี้อย่างเดียว และ nginx proxy `/auth/*` ไปให้แบบ same-origin
-ผลคือ session cookie เป็น `HttpOnly` อยู่บนโฮสต์เดียวกับ portal และไม่ต้องผ่อน
-Content-Security-Policy เพิ่มแม้แต่บรรทัดเดียว
+`psu-auth` ทำหน้าที่นี้ และรับหน้าที่ตรวจอีเมล/รหัสผ่านด้วยในตัวเดียวกัน เพราะ
+ทั้งสองทางต้องคุยกับฐานข้อมูล `identity` เดียวกันและออก session แบบเดียวกัน —
+nginx proxy `/auth/*` ไปให้แบบ same-origin ผลคือ session cookie เป็น
+`HttpOnly` อยู่บนโฮสต์เดียวกับ portal และไม่ต้องผ่อน Content-Security-Policy
+เพิ่มแม้แต่บรรทัดเดียว
+
+**สองทางนี้เป็นอิสระจากกัน** เครื่องที่ยังไม่ได้ลงทะเบียน OIDC client กับ
+PSU Passport ยัง**สตาร์ต service ได้ปกติ** และให้เข้าสู่ระบบด้วยอีเมล/รหัสผ่านได้
+ปุ่ม PSU Passport บนหน้า `/login` จะซ่อนตัวเองพร้อมข้อความอธิบายแทนที่จะเสนอ
+ลิงก์ที่กดแล้วพัง (ตรวจจาก `/auth/health` ที่ตอบ `{"psuPassport": false}`)
 
 ## สิ่งที่ต้องเตรียมก่อน
+
+**ถ้าต้องการเฉพาะอีเมล/รหัสผ่าน** ไม่ต้องเตรียมอะไรเพิ่มนอกจาก
+`IDENTITY_DB_PASSWORD` (มีอยู่แล้วถ้ารัน `platform-migrate` ไปแล้ว) แล้วข้ามไป
+หัวข้อ "เปิดใช้งาน" ได้เลย
+
+**ถ้าต้องการ PSU Passport ด้วย:**
 
 1. **ลงทะเบียน OIDC client กับผู้ดูแล PSU Passport** โดยระบุ redirect URI เป็น
    `AUTH_PUBLIC_ORIGIN` + `/auth/callback` เช่น `http://localhost:8085/auth/callback`
@@ -35,10 +49,18 @@ docker compose --profile auth up -d psu-auth    # เปิด service เข้
 docker compose exec psu-portal nginx -s reload  # ให้ nginx รับ /auth/ proxy
 ```
 
-`psu-auth` อยู่หลัง Compose profile เพราะไม่มี OIDC client แล้วมันสตาร์ตไม่ได้
-สแตกที่เหลือจึงต้องขึ้นได้ตามปกติบนเครื่องที่ยังไม่ได้ลงทะเบียน client
-เมื่อไม่ได้เปิด service นี้ `/auth/me` จะตอบ 502 และ portal จะ**ซ่อนปุ่มเข้าสู่ระบบ**
-แทนที่จะโชว์ปุ่มที่กดแล้วพัง
+`psu-auth` อยู่หลัง Compose profile เพื่อให้สแตกที่เหลือขึ้นได้ตามปกติบนเครื่องที่
+ยังไม่ได้เปิดใช้การเข้าสู่ระบบเลย — เมื่อไม่ได้เปิด service นี้ `/auth/me` จะตอบ 502
+และ portal จะ**ซ่อนปุ่มเข้าสู่ระบบ**แทนที่จะโชว์ปุ่มที่กดแล้วพัง
+
+**ไม่จำเป็นต้องมี OIDC client ก่อนเปิด service นี้อีกต่อไป** — ถ้า `OIDC_ISSUER`,
+`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` ยังว่างอยู่ `psu-auth` จะสตาร์ตปกติ
+พร้อมเข้าสู่ระบบด้วยอีเมล/รหัสผ่าน และ log แจ้งว่า PSU Passport ปิดอยู่:
+
+```
+[auth] OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET not set;
+PSU Passport sign-in is disabled, email-and-password sign-in still works
+```
 
 ## ลำดับการทำงาน
 
@@ -76,6 +98,70 @@ docker compose exec psu-portal nginx -s reload  # ให้ nginx รับ /aut
 **redirect กลับได้เฉพาะ path ภายใน** ค่า `next` ที่ขึ้นต้นด้วย `//` หรือระบุโฮสต์
 จะถูกแทนด้วย `/` ไม่ใช่แก้ให้ถูก
 
+## เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน
+
+หน้า `/login` เสนอสองทางเสมอ (ซ่อนปุ่ม PSU Passport เองถ้ายังไม่เปิดใช้งาน) —
+อ้างอิงโครงจากหน้า login ของ dotBlue (ปุ่ม OIDC เด่นด้านบน, เส้นคั่น, ฟอร์ม
+อีเมล/รหัสผ่านด้านล่าง) แต่ผูกกับฐานข้อมูล Postgres ชุดเดียวกับ PSU Passport
+ไม่ใช่ MongoDB ของ dotBlue
+
+**ไม่มีหน้าสมัครสมาชิก** `POST /auth/password/login` เป็น route เดียวที่เกี่ยวข้อง
+กับรหัสผ่าน และเป็น route สำหรับ**ตรวจ**อย่างเดียว ไม่มี route ใดใน service นี้
+ที่เขียน `password_hash` ได้ — บัญชีสร้างโดยผู้ดูแลผ่าน
+`scripts/create-password-account.sh` เท่านั้น ซึ่งรันเป็น superuser ของฐานข้อมูล
+(`psu`) เหมือน `config/platform/migrate.sh` ไม่ใช่ role `identity_app` ที่ service
+ใช้ตอนรัน — แยกกันโดยสิ้นเชิงระดับสิทธิ์ฐานข้อมูล ไม่ใช่แค่ไม่มีปุ่มในหน้าเว็บ
+
+### สร้างบัญชี
+
+```sh
+scripts/create-password-account.sh someone@psu.ac.th "ชื่อที่จะแสดงในระบบ"
+```
+
+สุ่มรหัสผ่านให้ (ไม่ให้ผู้ดูแลตั้งเอง เพราะมักตั้งรหัสอ่อนหรือใช้ซ้ำ) แล้วพิมพ์ออกมา
+**ครั้งเดียว** ทางเทอร์มินัล ไม่เก็บไว้ที่ไหนอีก ผู้ดูแลนำไปส่งต่อผ่านช่องทางที่
+หน่วยงานเชื่อถืออยู่แล้ว เหมือนการส่งต่อรหัสผ่านชุดอื่น ๆ
+
+บัญชีเริ่มที่ `access_tier = 'none'` เหมือนบัญชี PSU Passport ทุกประการ —
+เข้าสู่ระบบได้ไม่ได้แปลว่าอ่านข้อมูลได้ ต้องให้สิทธิ์แยกต่างหาก:
+
+```sql
+UPDATE identity.app_user SET access_tier = 'viewer', org_unit = '<unit>'
+  WHERE lower(email) = lower('someone@psu.ac.th');
+```
+```sh
+scripts/publish-trino-groups.sh
+```
+
+รันซ้ำด้วยอีเมลเดิมเพื่อ**ตั้งรหัสผ่านใหม่**ได้ (กรณีลืมรหัสผ่าน) — ไม่มีหน้า
+"ลืมรหัสผ่าน" ที่ผู้ใช้กดเองได้ ต้องขอผู้ดูแล
+
+### กฎที่บังคับไว้ในโค้ด (อีเมล/รหัสผ่าน)
+
+**เดายากว่าใครมีบัญชีจริง** ไม่ว่าอีเมลจะไม่มีอยู่จริง รหัสผ่านผิด หรือบัญชีเป็น
+PSU-Passport-only (ไม่มี `password_hash`) — ทั้งสามกรณีตอบ**ข้อความเดียวกัน**
+(`401 invalid_credentials`) และรัน bcrypt compare **ต้นทุนเท่ากันเสมอ** โดยเทียบกับ
+hash หลอกเมื่อไม่พบบัญชีจริง (`services/auth/src/password.ts`) กันไม่ให้ทั้งข้อความ
+และเวลาตอบสนองบอกได้ว่าอีเมลนั้นมีอยู่ในระบบหรือไม่ — ปรับปรุงจากรูปแบบอ้างอิงของ
+dotBlue เอง ซึ่งตอบข้อความต่างกันระหว่าง "Email does not exist" กับ
+"Incorrect password"
+
+**จำกัดจำนวนครั้งต่ออีเมล** ผิดเกิน `PASSWORD_LOGIN_MAX_ATTEMPTS` (ค่าเริ่มต้น 8)
+ครั้งในหน้าต่าง `PASSWORD_LOGIN_WINDOW_SECONDS` (ค่าเริ่มต้น 900 วินาที) ตอบ
+`429` พร้อม `Retry-After` ตัวนับอยู่ใน**หน่วยความจำของ service เอง** ไม่ใช่ฐานข้อมูล
+จึงรีเซ็ตเมื่อ restart และไม่ใช้ร่วมกันถ้าวันหนึ่งขยายเป็นหลาย instance — จุดจำกัดที่
+ต้องรู้ ไม่ใช่เรื่องซ่อน
+
+**เก็บ hash ไม่เก็บรหัสผ่าน** `password_hash` เป็น bcrypt (cost factor ตั้งได้ผ่าน
+`PASSWORD_LOGIN_BCRYPT_COST`) ไม่มีที่ใดในโค้ดเก็บรหัสผ่านตัวเดิม แม้แต่ชั่วคราว
+เครื่องมือแฮชรหัส (`services/auth/src/tools/hash-password.ts`) พิมพ์ผลลัพธ์ไปที่
+stdout อย่างเดียว ไม่เขียนไฟล์
+
+**identity_app อ่าน `password_hash` ได้เพื่อตรวจ แต่เขียนไม่ได้เลย** migration
+`013-password-login.sql` ไม่ให้สิทธิ์ INSERT/UPDATE บนคอลัมน์นี้แก่ role นี้ในทั้ง
+สองทิศทาง — ต่อให้โค้ดของ service มีบั๊ก ก็ไม่มีทางเขียนรหัสผ่านลงบัญชีใครได้จาก
+เส้นทางที่ผู้ใช้ทั่วไปเข้าถึง
+
 ## บันทึกการประมวลผลข้อมูลส่วนบุคคล (PDPA)
 
 นี่เป็น schema แรกในสแตกนี้ที่เก็บข้อมูลบุคคลจริง ทุกอย่างที่เหลือเป็นข้อมูลสังเคราะห์
@@ -84,7 +170,7 @@ docker compose exec psu-portal nginx -s reload  # ให้ nginx รับ /aut
 |---|---|
 | วัตถุประสงค์ | ตัดสินว่าผู้ที่เข้าสู่ระบบเปิดอะไรได้บ้างใน portal และแสดงสังกัดของตนเอง |
 | ฐานทางกฎหมาย | ภารกิจของรัฐเพื่อประโยชน์สาธารณะ PDPA มาตรา 24(4) — ควบคุมการเข้าถึงระบบสารสนเทศของมหาวิทยาลัยสำหรับบุคลากรและนักศึกษาของตนเอง |
-| ข้อมูลที่เก็บ | OIDC subject, ชื่อผู้ใช้ PSU, ชื่อแสดงผล, อีเมล, ประเภทผู้ใช้, วิทยาเขต, คณะ, ภาควิชา, สาขา, เวลาเข้าใช้ |
+| ข้อมูลที่เก็บ | OIDC subject (ถ้ามี), ชื่อผู้ใช้ PSU (ถ้ามี), ชื่อแสดงผล, อีเมล, bcrypt hash ของรหัสผ่าน (เฉพาะบัญชีที่ผู้ดูแลสร้าง), ประเภทผู้ใช้, วิทยาเขต, คณะ, ภาควิชา, สาขา, เวลาเข้าใช้ |
 | ข้อมูลที่**ไม่**เก็บ | เลขประจำตัวประชาชน, วันเกิด, ที่อยู่, เบอร์โทร, สัญชาติ, สถานภาพการศึกษา — gateway ส่งมาด้วยแต่โค้ดไม่ประกาศ type ไว้ จึงอ่านหรือเก็บโดยบังเอิญไม่ได้ |
 | log การเข้าถึง | บันทึกว่ามีการเข้าสู่ระบบและจบอย่างไร ด้วยรหัสเหตุผลชุดปิด ไม่มี IP ไม่มี user agent ไม่มี payload ของ claim |
 | ระยะเก็บรักษา | session หมดอายุตามเวลา, login event 180 วัน, บัญชีที่ไม่ได้เข้าใช้ 24 เดือน — บังคับด้วย `identity.purge_expired()` ซึ่ง service เรียกทุกชั่วโมง ไม่ใช่รอคนมารัน |
@@ -140,6 +226,15 @@ UPDATE identity.app_user SET access_tier = 'viewer_exec' WHERE psu_username = '<
 
 -- นักวิเคราะห์
 UPDATE identity.app_user SET access_tier = 'analyst' WHERE psu_username = '<username>';
+
+-- เจ้าของข้อมูล ผูกกับหน่วยงานหนึ่งเสมอ (ต้องมี org_unit เหมือน viewer)
+UPDATE identity.app_user
+   SET access_tier = 'steward', org_unit = 'eng'
+ WHERE psu_username = '<username>';
+
+-- นักพัฒนา -- สิทธิ์เท่ากับ identity ผู้ดูแลแพลตฟอร์มทุกประการ ดูหัวข้อ
+-- "ระดับสิทธิ์ทั้งหก" ด้านล่างก่อนใช้ tier นี้
+UPDATE identity.app_user SET access_tier = 'developer' WHERE psu_username = '<username>';
 ```
 
 แล้วสั่ง:
@@ -169,12 +264,49 @@ org unit ถ้าเซ็ตว่างก็ไม่เกิด filter —
 constraint `app_user_viewer_is_scoped` กันไม่ให้บันทึกสถานะนั้นลงฐานข้อมูลตั้งแต่แรก
 ทดสอบไว้ที่ `test_unscoped_viewer_cannot_select_published`
 
+### ระดับสิทธิ์ทั้งหก
+
+`access_tier` รับได้ 6 ค่า (`config/platform/014-steward-developer-tiers.sql`):
+
+| tier | ต้องมี org_unit | อ่าน | เขียน | Trino group |
+|---|---|---|---|---|
+| `none` | ไม่ | ไม่มีเลย | ไม่มีเลย | ไม่ปรากฏใน groups.txt |
+| `viewer` | **ต้องมี** | `published` เฉพาะแถวของหน่วยงานตัวเอง | ไม่มี | `psu_viewer`, `psu_viewer_org_<unit>` |
+| `viewer_exec` | ไม่ | `published` ทุกหน่วยงาน | ไม่มี | `psu_viewer`, `psu_viewer_exec` |
+| `analyst` | ไม่ | `curated`+`published` ทุกหน่วยงาน | `curated`+`published` ทุกหน่วยงาน | `psu_analyst` |
+| `steward` | **ต้องมี** | `curated`+`published` เฉพาะแถวของหน่วยงานตัวเอง | **ไม่มี — ดูเหตุผลด้านล่าง** | `psu_steward`, `psu_steward_org_<unit>` |
+| `developer` | ไม่ | ทุกอย่าง ไม่มีข้อจำกัด | ทุกอย่าง ไม่มีข้อจำกัด | `psu_admin` (**กลุ่มเดียวกับ identity ผู้ดูแลแพลตฟอร์ม**) |
+
+**ทำไม `steward` อ่านได้แต่เขียนไม่ได้** OPA/Trino บังคับ row filter ได้เฉพาะตอน
+`SELECT` (`GetRowFilters`) เท่านั้น ไม่มีกลไกบังคับ "เขียนได้เฉพาะแถวของหน่วยงานตัวเอง"
+สำหรับ `INSERT`/`UPDATE`/`DELETE` เลย ถ้าให้สิทธิ์เขียนตอนนี้ เท่ากับให้เขียนทับ
+**ทุกแถว**ใน `curated`/`published` ไม่ใช่แค่ของหน่วยงานตัวเอง ซึ่งขัดกับความหมายของ
+"เจ้าของข้อมูลของหน่วยงานตัวเอง" โดยตรง — รอเส้นทางเขียนที่ scope ได้จริงก่อน
+(เช่น ผ่าน staging table เฉพาะหน่วยงาน หรือ workflow ตรวจสอบก่อน merge)
+ตอนนี้เจ้าของข้อมูลยังส่งคำขอผ่านหัวข้อ "เมื่อข้อมูลยังไม่พร้อม" บนหน้า portal
+เหมือนเดิม
+
+**`developer` = สิทธิ์เท่า `psu_admin` ทุกประการ ไม่ใช่ "แอดมินอย่างอ่อน"**
+OPA มีกฎ `allow if is_admin` แบบไม่มีเงื่อนไขต่อท้ายเลย (บรรทัดเดียวให้ผ่านทุก
+operation ทุก schema) — บัญชี tier นี้จึงมีสิทธิ์เท่ากับ identity ที่ควบคุมทั้ง
+แพลตฟอร์ม ไม่ใช่แค่ข้อมูล ให้ tier นี้เฉพาะทีมพัฒนาของตัวเอง ไม่ใช่ผู้ใช้ทั่วไป
+ที่ "ขอสิทธิ์เยอะหน่อย"
+
+**บัญชี email/รหัสผ่านต้องมี `psu_username` ก่อนรับ tier ใด ๆ ได้** ไม่ว่า tier
+ไหน — คอลัมน์นี้คือชื่อที่ `identity.v_trino_groups` ใช้เขียนลง `groups.txt`
+บัญชี PSU Passport ได้ค่านี้จากไดเรกทอรีอัตโนมัติตอน sync ครั้งแรก แต่บัญชี
+รหัสผ่านไม่มีไดเรกทอรีให้ดึง จึง `scripts/create-password-account.sh` สร้างให้
+อัตโนมัติจากส่วนหน้า `@` ของอีเมล (เช่น `somchai.k@psu.ac.th` → `somchai.k`)
+เว้นแต่จะระบุเอง (พารามิเตอร์ตัวที่ 3) — บังคับด้วย constraint
+`app_user_password_tier_needs_username` ไม่ใช่แค่ข้อตกลง ลองให้ tier บัญชีที่ไม่มี
+`psu_username` จะถูกฐานข้อมูลปฏิเสธทันที
+
 ### ตรวจสอบ
 
 ```sh
 scripts/test-superset-oauth.sh                                   # 6 เคส
-docker compose run --rm --entrypoint /opa opa test /policies     # 41 เคส
-scripts/test-identity.sh                                         # 9 เคส
+docker compose run --rm --entrypoint /opa opa test /policies     # 50 เคส
+scripts/test-identity.sh                                         # 23 เคส
 ```
 
 ## สิ่งที่ยังไม่ได้ทำ
@@ -189,10 +321,36 @@ scripts/test-identity.sh                                         # 9 เคส
 และสิทธิ์ให้ได้ทีละบัญชีผ่าน `access_tier` แต่ยังไม่มีนโยบายที่แปลงประเภทผู้ใช้
 เป็นสิทธิ์โดยอัตโนมัติ ต้องออกแบบร่วมกับเจ้าของข้อมูลก่อน ไม่ควรให้ระบบเดาเอง
 
+**อีเมล/รหัสผ่านยังไม่มีทางแก้เองสามอย่าง** — (1) ไม่มีหน้า "ลืมรหัสผ่าน" ที่ผู้ใช้กด
+เองได้ ต้องขอผู้ดูแลรัน `create-password-account.sh` ซ้ำเพื่อออกรหัสใหม่
+(2) ไม่มีหน้าเปลี่ยนรหัสผ่านหลัง login แล้ว (3) ไม่มีการบังคับเปลี่ยนรหัสผ่านในการ
+เข้าสู่ระบบครั้งแรก ทั้งสามข้อทำได้ในเฟสถัดไปถ้าต้องการ
+
+**ตัวจำกัดจำนวนครั้งของอีเมล/รหัสผ่านไม่ทนต่อการรีสตาร์ตหรือหลาย instance** เป็น
+in-memory ต่อ process (`services/auth/src/password.ts`) เหมาะกับ deployment
+เดียวที่รันอยู่ตอนนี้ ถ้าขยายเป็นหลาย instance ต้องย้ายไป Redis หรือฐานข้อมูล
+
+**`steward` อ่านได้แต่เขียนไม่ได้** ตามที่อธิบายไว้ในหัวข้อ "ระดับสิทธิ์ทั้งหก"
+ด้านบน — Trino/OPA บังคับ row-level ได้เฉพาะตอนอ่าน ยังไม่มีเส้นทางเขียนที่
+scope ตามหน่วยงานได้จริง ต้องออกแบบเพิ่มถ้าจะเปิดให้เจ้าของข้อมูลเขียนเองโดยตรง
+
+**ยังไม่มีบัญชีจริงสักบัญชีสำหรับ 4 บทบาทที่คุยกันไว้** ระดับสิทธิ์ทั้งหมดพร้อมใช้
+ในโค้ดแล้ว (ทดสอบผ่าน `scripts/test-identity.sh` และ OPA policy ครบ) แต่ยังไม่มี
+ผู้ดูแลรัน `scripts/create-password-account.sh` จริงสักครั้ง — `identity.app_user`
+ยังมี 0 แถว ต้องสร้างบัญชีจริงเมื่อพร้อมใช้งาน
+
+**ยังไม่ได้ทดสอบ PSU Passport กับ instance จริง** เพราะยังไม่มี OIDC client ที่
+ลงทะเบียนไว้ สิ่งที่ทดสอบแล้วคือ: service สตาร์ตขึ้นได้ทั้งแบบมีและไม่มี OIDC client
+(อีเมล/รหัสผ่านใช้งานได้ในทั้งสองกรณี), เชื่อมฐานข้อมูลด้วย role `identity_app` ได้จริง,
+การใช้งาน `openid-client` 6.1.7 ผ่าน typecheck กับ type definitions ของไลบรารีเอง,
+ข้อจำกัดทุกข้อของ schema ใน `scripts/test-identity.sh`, และเส้นทางอีเมล/รหัสผ่าน
+ทั้งหมดทดสอบจริงผ่าน HTTP ใน `scripts/test-password-login.sh`
+
 ## ตรวจสอบ
 
 ```sh
-scripts/test-identity.sh      # ข้อจำกัดและสิทธิ์ของ schema identity
-scripts/test-superset-oauth.sh # การเข้าสู่ระบบของ Superset และการให้สิทธิ์
-docker compose logs psu-auth  # ไม่ควรมีชื่อผู้ใช้หรือรหัสนักศึกษาปรากฏ
+scripts/test-identity.sh        # ข้อจำกัดและสิทธิ์ของ schema identity รวมบัญชีรหัสผ่าน
+scripts/test-password-login.sh  # เข้าสู่ระบบด้วยอีเมล/รหัสผ่านจริงผ่าน HTTP (ข้าม ถ้า psu-auth ไม่ได้รัน)
+scripts/test-superset-oauth.sh  # การเข้าสู่ระบบของ Superset และการให้สิทธิ์
+docker compose logs psu-auth    # ไม่ควรมีอีเมล ชื่อผู้ใช้ รหัสผ่าน หรือรหัสนักศึกษาปรากฏ
 ```

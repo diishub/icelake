@@ -60,6 +60,11 @@ const DEFAULT_CAMPUS_CODES = ['01', '02', '03', '04', '05'];
 export interface AppConfig {
   port: number;
   publicOrigin: string;
+  /**
+   * Undefined when PSU Passport has no registered client on this deployment.
+   * Email-and-password sign-in must keep working in that state, so nothing
+   * downstream may assume this is always present.
+   */
   oidc: {
     issuer: string;
     clientId: string;
@@ -71,7 +76,7 @@ export interface AppConfig {
     emailClaim: string;
     campusClaim: string | undefined;
     postLogoutRedirect: string | undefined;
-  };
+  } | undefined;
   directory: {
     baseUrl: string;
     studentKey: string | undefined;
@@ -91,6 +96,12 @@ export interface AppConfig {
     user: string;
     password: string;
   };
+  /** Email-and-password sign-in. Accounts are provisioned by an administrator; see scripts/create-password-account.sh. */
+  passwordLogin: {
+    bcryptCost: number;
+    maxAttemptsPerWindow: number;
+    windowSeconds: number;
+  };
 }
 
 export function readConfig(): AppConfig {
@@ -101,13 +112,22 @@ export function readConfig(): AppConfig {
     throw new Error('OIDC_CALLBACK_PATH must start with /');
   }
 
+  // The three values PSU Passport cannot work without. Read with optional()
+  // rather than required(): a deployment with no registered client must still
+  // start, because email-and-password sign-in has nothing to do with this
+  // provider and must not be held hostage by its absence.
+  const issuer = optional('OIDC_ISSUER');
+  const clientId = optional('OIDC_CLIENT_ID');
+  const clientSecret = optional('OIDC_CLIENT_SECRET');
+  const oidcConfigured = issuer !== undefined && clientId !== undefined && clientSecret !== undefined;
+
   return {
     port: number('AUTH_PORT', 8087),
     publicOrigin,
-    oidc: {
-      issuer: required('OIDC_ISSUER'),
-      clientId: required('OIDC_CLIENT_ID'),
-      clientSecret: required('OIDC_CLIENT_SECRET'),
+    oidc: oidcConfigured ? {
+      issuer,
+      clientId,
+      clientSecret,
       scope: optional('OIDC_SCOPE') ?? 'openid profile email',
       callbackPath,
       // PSU Passport accounts arrive with the full address as the preferred
@@ -118,7 +138,7 @@ export function readConfig(): AppConfig {
       emailClaim: optional('OIDC_EMAIL_CLAIM') ?? 'email',
       campusClaim: optional('OIDC_CAMPUS_CLAIM'),
       postLogoutRedirect: optional('OIDC_POST_LOGOUT_REDIRECT_URI'),
-    },
+    } : undefined,
     directory: {
       baseUrl: (optional('API_PSU_GATEWAY') ?? 'https://api-gateway.psu.ac.th:8443').replace(/\/+$/, ''),
       studentKey: optional('API_STUDENT_KEY'),
@@ -140,6 +160,11 @@ export function readConfig(): AppConfig {
       database: optional('IDENTITY_DB_NAME') ?? 'platform',
       user: optional('IDENTITY_DB_USER') ?? 'identity_app',
       password: required('IDENTITY_DB_PASSWORD'),
+    },
+    passwordLogin: {
+      bcryptCost: number('PASSWORD_LOGIN_BCRYPT_COST', 12),
+      maxAttemptsPerWindow: number('PASSWORD_LOGIN_MAX_ATTEMPTS', 8),
+      windowSeconds: number('PASSWORD_LOGIN_WINDOW_SECONDS', 15 * 60),
     },
   };
 }

@@ -13,8 +13,14 @@ is_ingestion if "psu_ingestion" in groups
 is_analyst if "psu_analyst" in groups
 is_viewer if "psu_viewer" in groups
 is_viewer_exec if "psu_viewer_exec" in groups
+# A data owner reviewing their own unit's data before it is released more
+# broadly. Deliberately not an alias for analyst or viewer: it reads a schema
+# analyst-only readers see (curated) but, unlike analyst, only its own org
+# unit's rows -- a shape neither existing tier had.
+is_steward if "psu_steward" in groups
 is_reader if is_analyst
 is_reader if is_viewer
+is_reader if is_steward
 
 # Non-executive viewers are scoped to their org unit(s) via psu_viewer_org_<unit>
 # groups rendered by config/trino/render-groups.sh from PSU_VIEWER_<n>_ORG_UNIT.
@@ -22,6 +28,16 @@ viewer_org_units := {ou |
   some g in groups
   startswith(g, "psu_viewer_org_")
   ou := trim_prefix(g, "psu_viewer_org_")
+}
+
+# Same shape, for stewards. A steward with none is a data-entry error, not a
+# state that should read anything -- see steward_is_scoped below, which has no
+# "exec" escape hatch the way a viewer does: there is no such thing as a data
+# owner for the whole university.
+steward_org_units := {ou |
+  some g in groups
+  startswith(g, "psu_steward_org_")
+  ou := trim_prefix(g, "psu_steward_org_")
 }
 
 table := input.action.resource.table
@@ -105,6 +121,25 @@ viewer_is_scoped if is_viewer_exec
 
 viewer_is_scoped if count(viewer_org_units) > 0
 
+# A steward reads curated and published, but only their own org unit's rows --
+# the row filter below is what actually narrows it; this just gates access to
+# the table at all, the same "no scope, no access" reasoning as viewer_is_scoped.
+allow if {
+  is_steward
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName in {"curated", "published"}
+  count(steward_org_units) > 0
+}
+
+# Write access for stewards is not granted here. Submitting or correcting a
+# unit's data currently goes through the coordination path in the portal's
+# request-data section, not a direct SQL write: nothing in this policy or in
+# Trino enforces a row-level boundary on INSERT/UPDATE/DELETE the way the row
+# filter below does for reads, so granting DML to a steward today would mean
+# trusting them with every row in curated/published, not just their own
+# unit's. Revisit once there is a write path that can actually be scoped.
+
 # Analysts additionally get row-level write access on curated and published —
 # schema/table DDL (CreateTable, DropTable, ...) stays admin/ingestion-only.
 allow if {
@@ -168,6 +203,16 @@ rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
   table.schemaName == "published"
   table.tableName in data.org_scoped_tables
   some ou in viewer_org_units
+}
+
+# Same mechanism as the viewer filter above, extended to curated as well as
+# published: a steward's read access covers both schemas, so both need the
+# filter or curated would be readable without any row boundary at all.
+rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
+  is_steward
+  table.schemaName in {"curated", "published"}
+  table.tableName in data.org_scoped_tables
+  some ou in steward_org_units
 }
 
 # ---------------------------------------------------------------------------

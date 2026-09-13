@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="เข้าสู่ระบบ PSU Data Hub ด้วย PSU Passport หรืออีเมลและรหัสผ่าน">
+    <title>เข้าสู่ระบบ · PSU Data Hub</title>
+    <!--
+      Same three faces the home page preloads, for the same reason: Sarabun is
+      this portal's one typeface, in Thai and Latin, and preloading the weights
+      this page actually uses (400 for body copy, 800 for the heading) avoids a
+      flash of fallback type on the one screen a first-time visitor is most
+      likely to land on directly.
+    -->
+    <link rel="preload" href="/fonts/sarabun-thai-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-thai-800.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/i18n/th.js" defer></script>
+    <script src="/i18n/en.js" defer></script>
+    <script src="/i18n/index.js" defer></script>
+    <script src="/login.js" defer></script>
+  </head>
+  <body class="login-body">
+    <a class="skip-link" href="#login-main" data-i18n="skip">ข้ามไปยังเนื้อหาหลัก</a>
+
+    <header class="login-header">
+      <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
+        <span class="brand-mark" aria-hidden="true">PSU</span>
+        <span class="brand-copy">
+          <strong>PSU Data Hub</strong>
+        </span>
+      </a>
+      <button class="lang-switch" type="button" id="lang-switch"
+              aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel">
+        <span aria-hidden="true">&#127760;</span><span data-i18n="lang.switchTo">English</span>
+      </button>
+    </header>
+
+    <main id="login-main" class="login-main">
+      <div class="login-card">
+        <p class="login-status" id="login-status" role="status" aria-live="polite" hidden></p>
+
+        <div id="login-forms">
+          <h1 class="login-heading" data-i18n="login.heading">เข้าสู่ระบบ</h1>
+          <p class="login-subheading" data-i18n="login.subheading">เข้าสู่ระบบเพื่อเปิดรายงานและจัดการชุดข้อมูลของคุณ</p>
+
+          <p class="login-note login-note-warning" id="psu-passport-note" hidden
+             data-i18n="login.psuPassportUnavailable">PSU Passport ยังไม่เปิดใช้งานบนระบบนี้ ใช้อีเมลและรหัสผ่านด้านล่างแทน</p>
+
+          <a class="button button-primary login-psu-button" id="psu-passport-button" href="#">
+            <span class="login-psu-mark" aria-hidden="true">PSU</span>
+            <span data-i18n="login.psuPassportButton">เข้าสู่ระบบด้วย PSU Passport</span>
+          </a>
+
+          <div class="login-divider" id="login-divider">
+            <span data-i18n="login.divider">หรือ</span>
+          </div>
+
+          <form class="login-form" id="login-form" novalidate>
+            <p class="login-error" id="login-error" role="alert" hidden></p>
+
+            <div class="login-field">
+              <label for="login-email" data-i18n="login.emailLabel">อีเมล</label>
+              <input type="email" id="login-email" name="email" required
+                     autocomplete="username" inputmode="email"
+                     placeholder="you@psu.ac.th" data-i18n-attr="placeholder:login.emailPlaceholder">
+            </div>
+
+            <div class="login-field">
+              <label for="login-password" data-i18n="login.passwordLabel">รหัสผ่าน</label>
+              <input type="password" id="login-password" name="password" required
+                     autocomplete="current-password"
+                     placeholder="รหัสผ่านของคุณ" data-i18n-attr="placeholder:login.passwordPlaceholder">
+            </div>
+
+            <button class="button button-dark login-submit" type="submit" id="login-submit" data-i18n="login.submit">
+              เข้าสู่ระบบด้วยอีเมล
+            </button>
+          </form>
+
+          <p class="login-note" data-i18n="login.noAccountNote">
+            บัญชีอีเมลและรหัสผ่านสร้างโดยผู้ดูแลระบบเท่านั้น ติดต่อทีมข้อมูลหากยังไม่มีบัญชี
+          </p>
+        </div>
+      </div>
+
+      <a class="login-back" href="/" data-i18n="login.backHome">กลับหน้าแรก</a>
+    </main>
+
+    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบและอ่านบัญชีรายการชุดข้อมูล กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
+  </body>
+</html>

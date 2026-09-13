@@ -553,6 +553,11 @@ services:
       PSU_CAMPUS_CODES: ${PSU_CAMPUS_CODES:-}
       PSU_API_TIMEOUT_MS: ${PSU_API_TIMEOUT_MS:-5000}
       IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-}
+      # Email-and-password sign-in. No registration route reads these; they
+      # only govern hashing cost and the in-memory rate limiter.
+      PASSWORD_LOGIN_BCRYPT_COST: ${PASSWORD_LOGIN_BCRYPT_COST:-12}
+      PASSWORD_LOGIN_MAX_ATTEMPTS: ${PASSWORD_LOGIN_MAX_ATTEMPTS:-8}
+      PASSWORD_LOGIN_WINDOW_SECONDS: ${PASSWORD_LOGIN_WINDOW_SECONDS:-900}
     depends_on:
       postgres:
         condition: service_healthy

@@ -12,7 +12,9 @@
 -- Reversal:
 --   ALTER TABLE ingest.source_table
 --     DROP COLUMN display_name_en, DROP COLUMN description_en;
---   plus re-running 006 to restore the previous view definition.
+--   then remove title_en/description_en from the SELECT list below and
+--   re-run this file, since it is the sole owner of ingest.v_portal_catalog
+--   (see the note in 006-catalog-metadata.sql for why).
 
 ALTER TABLE ingest.source_table
   ADD COLUMN IF NOT EXISTS display_name_en text,

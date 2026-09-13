@@ -29,8 +29,21 @@ as_pipeline() {
       --no-align --tuples-only --quiet --no-psqlrc -f - 2>&1
 }
 
+# Runs SQL as the database owner. Only used for teardown and for cases about
+# a constraint itself rather than about a role's privileges: provisioning an
+# email-and-password account runs as this identity in production too --
+# scripts/create-password-account.sh, never as identity_app.
+as_owner() {
+  docker compose exec -T postgres /bin/sh -ec \
+    'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" \
+       --dbname platform --no-align --tuples-only --quiet --no-psqlrc -f -' 2>&1
+}
+
+pass() { echo "PASS $1"; }
+fail() { failures=$((failures + 1)); echo "FAIL $1: $2" >&2; }
+
 expect_equals() {
-  if [ "$3" = "$2" ]; then echo "PASS $1"; else failures=$((failures + 1)); echo "FAIL $1: expected '$2', got '$3'" >&2; fi
+  if [ "$3" = "$2" ]; then pass "$1"; else fail "$1" "expected '$2', got '$3'"; fi
 }
 
 expect_refused() {
@@ -87,6 +100,108 @@ expect_equals "retention removes the expired session" "0" \
 docker compose exec -T postgres /bin/sh -ec \
   'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" --dbname platform \
      --quiet --no-psqlrc -c "DELETE FROM identity.app_user WHERE subject = '"'"'SYNTHETIC-SUBJECT-TEST'"'"'"' >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# Email-and-password sign-in
+# ---------------------------------------------------------------------------
+#
+# Provisioning itself runs as the database owner (scripts/create-password-account.sh
+# does the same), so these constraint checks run as_owner too; the role checks
+# below assert what identity_app specifically may and may not do with a
+# password hash.
+
+expect_refused "a password-only account needs at least one auth method" \
+  "$(printf "INSERT INTO identity.app_user (email, display_name) VALUES ('synthetic-noauth@example.invalid', 'No Auth Method');\n" | as_owner)"
+
+printf "%s\n" "INSERT INTO identity.app_user (email, display_name, password_hash)
+  VALUES ('synthetic-pw@example.invalid', 'Synthetic Password Account', '\$2a\$04\$abcdefghijklmnopqrstuuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v');" | as_owner >/dev/null
+
+expect_equals "a password-only account can be created with no subject or PSU username" "1" \
+  "$(printf "SELECT count(*) FROM identity.app_user
+     WHERE email = 'synthetic-pw@example.invalid' AND subject IS NULL AND psu_username IS NULL;\n" | as_owner)"
+
+expect_equals "a new password account is granted no data access, same as a new PSU Passport account" "none" \
+  "$(printf "SELECT access_tier FROM identity.app_user WHERE email = 'synthetic-pw@example.invalid';\n" | as_owner)"
+
+expect_refused "email must be unique, case-insensitively" \
+  "$(printf "INSERT INTO identity.app_user (email, display_name, password_hash)
+       VALUES ('Synthetic-PW@example.invalid', 'Duplicate', '\$2a\$04\$zzzzzzzzzzzzzzzzzzzzzuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v');\n" | as_owner)"
+
+expect_refused "the sign-in service cannot write a password hash" \
+  "$(printf "UPDATE identity.app_user SET password_hash = 'nope' WHERE email = 'synthetic-pw@example.invalid';\n" | as_identity)"
+
+expect_refused "the sign-in service cannot create a password-only account" \
+  "$(printf "INSERT INTO identity.app_user (email, display_name, password_hash)
+       VALUES ('synthetic-pw-2@example.invalid', 'Should Be Refused', '\$2a\$04\$abcdefghijklmnopqrstuuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v');\n" | as_identity)"
+
+expect_equals "the sign-in service can still read a password hash, to verify one" "synthetic-pw@example.invalid" \
+  "$(printf "SELECT email FROM identity.app_user WHERE email = 'synthetic-pw@example.invalid' AND password_hash IS NOT NULL;\n" | as_identity)"
+
+# identity_app can INSERT into login_event but, deliberately, cannot SELECT
+# from it -- an append-only audit log the writer cannot read back matches the
+# "cannot delete its audit trail" case above. So the insert's own success is
+# the check; confirming what actually landed runs as the owner, scoped by
+# event_id rather than by a time window, since the table already carries rows
+# from every earlier run of this script and from real sign-in attempts.
+last_id_before="$(printf "SELECT COALESCE(max(event_id), 0) FROM identity.login_event;\n" | as_owner)"
+
+for reason in invalid_credentials rate_limited; do
+  insert_result="$(printf "INSERT INTO identity.login_event (outcome, reason) VALUES ('denied', '%s');\n" "${reason}" | as_identity)"
+  case "${insert_result}" in
+    *ERROR*) fail "login_event accepts the reason ${reason}" "${insert_result}" ;;
+    *) pass "login_event accepts the reason ${reason}" ;;
+  esac
+done
+
+expect_equals "both new reasons were recorded and nothing else" "invalid_credentials rate_limited" \
+  "$(printf "SELECT string_agg(reason, ' ' ORDER BY event_id) FROM identity.login_event WHERE event_id > %s;\n" "${last_id_before}" | as_owner)"
+
+docker compose exec -T postgres /bin/sh -ec \
+  'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" --dbname platform \
+     --quiet --no-psqlrc -c "DELETE FROM identity.app_user WHERE email IN ('"'"'synthetic-pw@example.invalid'"'"', '"'"'synthetic-noauth@example.invalid'"'"')"' >/dev/null 2>&1
+
+# ---------------------------------------------------------------------------
+# steward and developer tiers (config/platform/014-steward-developer-tiers.sql)
+# ---------------------------------------------------------------------------
+#
+# A password account needs a psu_username before it can be granted anything,
+# because that column is what identity.v_trino_groups renders into the group
+# file -- the gap this migration closed. steward additionally needs org_unit,
+# the same rule viewer already had, now covering both.
+
+printf "%s\n" "INSERT INTO identity.app_user (email, display_name, password_hash, psu_username)
+  VALUES ('synthetic-tier-test@example.invalid', 'Synthetic Tier Test',
+          '\$2a\$04\$abcdefghijklmnopqrstuuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v',
+          'synthetic-tier-test');" | as_owner >/dev/null
+
+expect_refused "granting a tier to a password account with no psu_username is refused" \
+  "$(printf "INSERT INTO identity.app_user (email, display_name, password_hash, access_tier)
+       VALUES ('synthetic-no-trino-name@example.invalid', 'No Trino Name',
+               '\$2a\$04\$abcdefghijklmnopqrstuuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v', 'analyst');\n" | as_owner)"
+
+expect_refused "steward needs an org_unit, the same as viewer" \
+  "$(printf "UPDATE identity.app_user SET access_tier = 'steward' WHERE email = 'synthetic-tier-test@example.invalid';\n" | as_owner)"
+
+printf "%s\n" "UPDATE identity.app_user SET access_tier = 'steward', org_unit = 'eng'
+  WHERE email = 'synthetic-tier-test@example.invalid';" | as_owner >/dev/null
+
+expect_equals "steward with an org_unit is accepted and rendered into its own Trino group" "psu_steward,psu_steward_org_eng" \
+  "$(printf "SELECT array_to_string(trino_groups, ',') FROM identity.v_trino_groups
+       WHERE username = 'synthetic-tier-test';\n" | as_owner)"
+
+printf "%s\n" "UPDATE identity.app_user SET access_tier = 'developer', org_unit = NULL
+  WHERE email = 'synthetic-tier-test@example.invalid';" | as_owner >/dev/null
+
+expect_equals "developer is rendered into the same Trino group the platform admin identity uses" "psu_admin" \
+  "$(printf "SELECT array_to_string(trino_groups, ',') FROM identity.v_trino_groups
+       WHERE username = 'synthetic-tier-test';\n" | as_owner)"
+
+expect_refused "an unknown access tier is still rejected" \
+  "$(printf "UPDATE identity.app_user SET access_tier = 'superuser' WHERE email = 'synthetic-tier-test@example.invalid';\n" | as_owner)"
+
+docker compose exec -T postgres /bin/sh -ec \
+  'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" --dbname platform \
+     --quiet --no-psqlrc -c "DELETE FROM identity.app_user WHERE email = '"'"'synthetic-tier-test@example.invalid'"'"'"' >/dev/null 2>&1
 
 if [ "${failures}" -eq 0 ]; then
   echo "all identity cases passed"

@@ -43,7 +43,7 @@ window.PSU_I18N_STRINGS.th = {
   "status.checkedNow": "ขณะนี้",
 
   // --- Account ---
-  "account.signIn": "เข้าสู่ระบบด้วย PSU Passport",
+  "account.signIn": "เข้าสู่ระบบ",
   "account.signOut": "ออกจากระบบ",
   "account.checking": "กำลังตรวจสิทธิ์",
   "account.fallbackName": "ผู้ใช้",
@@ -318,4 +318,28 @@ window.PSU_I18N_STRINGS.th = {
   // --- Fallbacks for deployment copy ---
   "config.publishedState": "ยังไม่มีรายงานที่ประกาศพร้อมใช้ในรอบ Pilot",
   "config.support": "ติดต่อทีมข้อมูลผ่านช่องทางภายในที่หน่วยงานกำหนด โดยไม่ส่งรหัสผ่าน",
+
+  // --- Login page ---
+  "login.pageTitle": "เข้าสู่ระบบ · PSU Data Hub",
+  "login.backHome": "กลับหน้าแรก",
+  "login.heading": "เข้าสู่ระบบ",
+  "login.subheading": "เข้าสู่ระบบเพื่อเปิดรายงานและจัดการชุดข้อมูลของคุณ",
+  "login.checking": "กำลังตรวจสอบสถานะการเข้าสู่ระบบ…",
+  "login.alreadySignedIn": "เข้าสู่ระบบอยู่แล้ว กำลังพาไปหน้าที่ต้องการ…",
+  "login.psuPassportButton": "เข้าสู่ระบบด้วย PSU Passport",
+  "login.psuPassportUnavailable": "PSU Passport ยังไม่เปิดใช้งานบนระบบนี้ ใช้อีเมลและรหัสผ่านด้านล่างแทน",
+  "login.serviceUnavailable": "ระบบเข้าสู่ระบบยังไม่พร้อมใช้งานในขณะนี้ กรุณาลองใหม่อีกครั้ง หรือติดต่อผู้ดูแลระบบ",
+  "login.divider": "หรือ",
+  "login.emailLabel": "อีเมล",
+  "login.emailPlaceholder": "you@psu.ac.th",
+  "login.passwordLabel": "รหัสผ่าน",
+  "login.passwordPlaceholder": "รหัสผ่านของคุณ",
+  "login.submit": "เข้าสู่ระบบด้วยอีเมล",
+  "login.submitting": "กำลังเข้าสู่ระบบ…",
+  "login.noAccountNote": "บัญชีอีเมลและรหัสผ่านสร้างโดยผู้ดูแลระบบเท่านั้น ติดต่อทีมข้อมูลหากยังไม่มีบัญชี",
+  "login.errorInvalidRequest": "กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน",
+  "login.errorInvalidCredentials": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+  "login.errorAccountDisabled": "บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ",
+  "login.errorRateLimited": "ลองผิดหลายครั้งเกินไป กรุณารออีก {seconds} วินาทีแล้วลองใหม่",
+  "login.errorGeneric": "เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
 };

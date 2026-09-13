@@ -103,3 +103,32 @@ function appendHeader(response: ServerResponse, name: string, value: string): vo
   const list = Array.isArray(existing) ? existing : [String(existing)];
   response.setHeader(name, [...list, value]);
 }
+
+/**
+ * Reads a JSON request body with a hard size cap, so a request cannot exhaust
+ * memory before Content-Length is even checked. Returns null for anything
+ * that is not valid JSON or exceeds the cap; the caller treats that as a bad
+ * request rather than throwing.
+ */
+export async function readJsonBody<T = unknown>(
+  request: import('node:http').IncomingMessage,
+  maxBytes = 8192,
+): Promise<T | null> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of request) {
+    total += (chunk as Buffer).length;
+    if (total > maxBytes) {
+      return null;
+    }
+    chunks.push(chunk as Buffer);
+  }
+  if (chunks.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
+  } catch {
+    return null;
+  }
+}

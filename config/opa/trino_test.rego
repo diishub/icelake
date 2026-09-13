@@ -367,3 +367,77 @@ test_executive_viewer_still_selects_published if {
     },
   }
 }
+
+# ---------------------------------------------------------------------------
+# Steward (data owner): reads curated and published, scoped to its own org
+# unit; no scope means no access, the same reasoning as the unscoped-viewer
+# case above; no write access at all, since nothing enforces a row boundary
+# on INSERT/UPDATE/DELETE the way the row filter does for reads.
+# ---------------------------------------------------------------------------
+
+steward_context := {"context": {"identity": {"user": "steward.eng", "groups": ["psu_steward", "psu_steward_org_eng"]}}}
+steward_unscoped_context := {"context": {"identity": {"user": "steward.none", "groups": ["psu_steward"]}}}
+
+test_scoped_steward_selects_curated if {
+  allow with input as object.union(steward_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "anything"}},
+  }})
+}
+
+test_scoped_steward_selects_published if {
+  allow with input as object.union(steward_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "anything"}},
+  }})
+}
+
+test_unscoped_steward_cannot_select_curated if {
+  not allow with input as object.union(steward_unscoped_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "anything"}},
+  }})
+}
+
+test_steward_cannot_read_raw if {
+  not allow with input as object.union(steward_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "anything"}},
+  }})
+}
+
+test_steward_cannot_insert_curated if {
+  not allow with input as object.union(steward_context, {"action": {
+    "operation": "InsertIntoTable",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "anything"}},
+  }})
+}
+
+test_steward_cannot_update_published if {
+  not allow with input as object.union(steward_context, {"action": {
+    "operation": "UpdateTableColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "anything"}},
+  }})
+}
+
+test_steward_can_start_query if {
+  allow with input as object.union(steward_context, {"action": {"operation": "ExecuteQuery", "resource": {}}})
+}
+
+test_steward_row_filter_narrows_to_own_org_unit if {
+  rowFilters == {{"expression": "org_unit = 'eng'"}}
+    with input as object.union(steward_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "report"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}
+
+test_steward_row_filter_absent_on_unscoped_table if {
+  count(rowFilters) == 0
+    with input as object.union(steward_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "not-listed"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}

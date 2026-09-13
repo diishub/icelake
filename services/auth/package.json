@@ -12,6 +12,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "bcryptjs": "3.0.3",
     "openid-client": "6.1.7",
     "pg": "8.13.1"
   },

@@ -20,7 +20,9 @@ export type LoginReason =
   | 'token_exchange_failed'
   | 'claims_incomplete'
   | 'directory_unavailable'
-  | 'account_disabled';
+  | 'account_disabled'
+  | 'invalid_credentials'
+  | 'rate_limited';
 
 export interface AccountIdentity {
   subject: string;
@@ -31,7 +33,8 @@ export interface AccountIdentity {
 
 export interface Account {
   userId: string;
-  username: string;
+  /** The PSU directory username. Null for an email-and-password account, which has no PSU Passport identity. */
+  username: string | null;
   displayName: string | null;
   email: string | null;
   userType: 'student' | 'staff' | 'unknown';
@@ -45,7 +48,7 @@ export interface Account {
 
 const accountFromRow = (row: Record<string, unknown>): Account => ({
   userId: String(row.user_id),
-  username: String(row.psu_username),
+  username: (row.psu_username as string | null) ?? null,
   displayName: (row.display_name as string | null) ?? null,
   email: (row.email as string | null) ?? null,
   userType: row.user_type as Account['userType'],
@@ -110,6 +113,42 @@ export class IdentityStore {
   }
 
   /** Records what the gateway answered, including which group it answered as. */
+  /**
+   * Looks an account up by email for a password sign-in attempt. Returns the
+   * stored hash alongside the account so the caller can run bcrypt.compare
+   * even when nothing is found -- see verifyPassword's dummy-hash comment for
+   * why that matters. The hash never leaves this method for any other reason.
+   */
+  async findByEmailForPasswordLogin(
+    email: string,
+  ): Promise<{ account: Account; passwordHash: string | null } | null> {
+    const result = await this.pool.query(
+      `SELECT ${ACCOUNT_COLUMNS}, password_hash
+         FROM identity.app_user
+        WHERE lower(email) = lower($1)
+        LIMIT 1`,
+      [email],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    return { account: accountFromRow(row), passwordHash: (row.password_hash as string | null) ?? null };
+  }
+
+  /** Marks a successful password sign-in. Directory lookup does not apply here: a password account has no PSU username to resolve. */
+  async recordPasswordLogin(userId: string): Promise<Account> {
+    const result = await this.pool.query(
+      `UPDATE identity.app_user SET last_login_at = now() WHERE user_id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+      [userId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('recordPasswordLogin matched no account');
+    }
+    return accountFromRow(row);
+  }
+
   async saveDirectory(userId: string, resolved: DirectoryResult): Promise<Account> {
     const result = await this.pool.query(
       `UPDATE identity.app_user

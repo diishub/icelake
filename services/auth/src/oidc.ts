@@ -7,6 +7,9 @@ import * as client from 'openid-client';
 
 import type { AppConfig } from './config.js';
 
+/** The subset of AppConfig this module needs, with oidc narrowed to defined. */
+type OidcAppConfig = Omit<AppConfig, 'oidc'> & { oidc: NonNullable<AppConfig['oidc']> };
+
 export interface PendingLogin {
   state: string;
   nonce: string;
@@ -30,11 +33,16 @@ const PENDING_MAX = 500;
 export class OidcProvider {
   private constructor(
     private readonly discovered: client.Configuration,
-    private readonly config: AppConfig,
+    private readonly config: OidcAppConfig,
   ) {}
 
-  /** Discovery happens once at start-up, so a bad issuer fails fast and loudly. */
-  static async create(config: AppConfig): Promise<OidcProvider> {
+  /**
+   * Discovery happens once at start-up, so a bad issuer fails fast and
+   * loudly. Callers must check config.oidc themselves; this never runs for a
+   * deployment with no registered client, so server.ts only calls it when
+   * config.oidc is present.
+   */
+  static async create(config: OidcAppConfig): Promise<OidcProvider> {
     const discovered = await client.discovery(
       new URL(config.oidc.issuer),
       config.oidc.clientId,

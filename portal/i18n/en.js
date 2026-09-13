@@ -43,7 +43,7 @@ window.PSU_I18N_STRINGS.en = {
   "status.checkedNow": "just now",
 
   // --- Account ---
-  "account.signIn": "Sign in with PSU Passport",
+  "account.signIn": "Sign in",
   "account.signOut": "Sign out",
   "account.checking": "Checking access",
   "account.fallbackName": "Signed in",
@@ -318,4 +318,28 @@ window.PSU_I18N_STRINGS.en = {
   // --- Fallbacks for deployment copy ---
   "config.publishedState": "No report has been published for the Pilot round yet",
   "config.support": "Contact the data team through your unit's internal channel. Never send a password.",
+
+  // --- Login page ---
+  "login.pageTitle": "Sign in · PSU Data Hub",
+  "login.backHome": "Back to home",
+  "login.heading": "Sign in",
+  "login.subheading": "Sign in to open reports and manage your datasets",
+  "login.checking": "Checking your sign-in status…",
+  "login.alreadySignedIn": "Already signed in. Taking you where you were headed…",
+  "login.psuPassportButton": "Sign in with PSU Passport",
+  "login.psuPassportUnavailable": "PSU Passport is not enabled on this deployment. Use email and password below instead.",
+  "login.serviceUnavailable": "Sign-in is not available right now. Please try again, or contact an administrator.",
+  "login.divider": "or",
+  "login.emailLabel": "Email",
+  "login.emailPlaceholder": "you@psu.ac.th",
+  "login.passwordLabel": "Password",
+  "login.passwordPlaceholder": "Your password",
+  "login.submit": "Sign in with email",
+  "login.submitting": "Signing in…",
+  "login.noAccountNote": "Email-and-password accounts are created by an administrator only. Contact the data team if you do not have one yet.",
+  "login.errorInvalidRequest": "Please enter both an email and a password.",
+  "login.errorInvalidCredentials": "Incorrect email or password.",
+  "login.errorAccountDisabled": "This account has been disabled. Please contact an administrator.",
+  "login.errorRateLimited": "Too many attempts. Please wait {seconds} seconds and try again.",
+  "login.errorGeneric": "Sign-in failed. Please try again.",
 };
