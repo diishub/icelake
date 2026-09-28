@@ -192,6 +192,12 @@ jobs:
         run: ./scripts/test-portal-catalog.sh
       - name: test-portal-i18n.sh
         run: ./scripts/test-portal-i18n.sh
+      - name: test-portal-embed.sh
+        run: ./scripts/test-portal-embed.sh
+      - name: test-data-upload.sh
+        run: ./scripts/test-data-upload.sh
+      - name: test-review-upload.sh
+        run: ./scripts/test-review-upload.sh
 
       - name: Dump logs on failure
         if: failure()

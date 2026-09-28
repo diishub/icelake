@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="รายงานข้อมูลตามสิทธิ์ของบัญชี · PSU Data Hub">
+    <title>รายงานของฉัน · PSU Data Hub</title>
+    <link rel="preload" href="/fonts/sarabun-thai-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-thai-800.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/i18n/th.js" defer></script>
+    <script src="/i18n/en.js" defer></script>
+    <script src="/i18n/index.js" defer></script>
+    <!-- Vendored, not a CDN script: matches this page's CSP (script-src 'self'). -->
+    <script src="/vendor/superset-embedded-sdk.js" defer></script>
+    <script src="/reports.js" defer></script>
+  </head>
+  <body class="login-body">
+    <a class="skip-link" href="#reports-main" data-i18n="skip">ข้ามไปยังเนื้อหาหลัก</a>
+
+    <header class="login-header">
+      <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
+        <span class="brand-mark" aria-hidden="true">PSU</span>
+        <span class="brand-copy">
+          <strong>PSU Data Hub</strong>
+        </span>
+      </a>
+      <button class="lang-switch" type="button" id="lang-switch"
+              aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel">
+        <span aria-hidden="true">&#127760;</span><span data-i18n="lang.switchTo">English</span>
+      </button>
+    </header>
+
+    <main id="reports-main" class="login-main">
+      <div class="login-card reports-card">
+        <p class="login-status" id="reports-status" role="status" aria-live="polite" hidden></p>
+
+        <div id="reports-forbidden" hidden>
+          <h1 class="login-heading" data-i18n="reports.forbiddenHeading">บัญชีนี้ยังไม่มีสิทธิ์ดูรายงาน</h1>
+          <p class="login-subheading" data-i18n="reports.forbiddenDetail">รายงานสำหรับผู้บริหารและนักวิเคราะห์เท่านั้น หากคิดว่าควรมีสิทธิ์ ติดต่อทีมข้อมูล</p>
+        </div>
+
+        <div id="reports-panel" hidden>
+          <h1 class="login-heading" data-i18n="reports.heading">รายงานของฉัน</h1>
+          <p class="embedded-dashboard-status" id="embedded-dashboard-status" data-i18n="embed.loading">กำลังโหลดแดชบอร์ด…</p>
+          <div class="embedded-dashboard-mount" id="embedded-dashboard-mount"></div>
+          <p class="embedded-dashboard-note" data-i18n="embed.opsNote">ตัวอย่างนี้คือแดชบอร์ดสถานะระบบนำเข้าข้อมูล ใช้พิสูจน์ว่าฝังรายงานจาก Superset ได้จริง รายงานข้อมูลมหาวิทยาลัยจริงจะตามมาแยกต่างหาก</p>
+          <a class="text-link" data-service-link="reports" href="#" data-i18n="embed.openInSuperset">เปิดใน Superset</a>
+        </div>
+      </div>
+
+      <a class="login-back" href="/" data-i18n="login.backHome">กลับหน้าแรก</a>
+    </main>
+
+    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบและอ่านบัญชีรายการชุดข้อมูล กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
+  </body>
+</html>

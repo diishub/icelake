@@ -4,10 +4,14 @@
 -- that are still null.
 --
 -- Domain choices worth stating, since they are judgement rather than fact:
---   * enrollment sits under academic, not student -- it describes what is
---     taught and when, and is read alongside the course catalogue.
 --   * the student register sits under student on its own, because that is the
 --     table people mean when they ask for "student data".
+--   * the course catalogue and enrolment are left with no domain (NULL, shown
+--     as "unsorted") rather than forced into one of the five categories
+--     config/platform/015-catalog-domains-expand.sql introduced -- teaching
+--     data is neither research nor an academic service, and the domain this
+--     table used to carry ('academic') was retired, not renamed. See 015 for
+--     why.
 
 UPDATE ingest.source_table AS st
 SET domain          = COALESCE(st.domain, v.domain),
@@ -15,11 +19,11 @@ SET domain          = COALESCE(st.domain, v.domain),
     description_th  = COALESCE(st.description_th, v.description)
 FROM (VALUES
   ('sim_academic_course',
-   'academic',
+   NULL,
    'รายวิชาที่เปิดสอน',
    'บัญชีรายวิชาพร้อมหน่วยกิตและหลักสูตรที่สังกัด ใช้เป็นตารางอ้างอิงของรายงานด้านการเรียนการสอน'),
   ('sim_academic_enrollment',
-   'academic',
+   NULL,
    'การลงทะเบียนเรียน',
    'รายการลงทะเบียนรายภาคการศึกษา นำเข้าแบบเพิ่มทีละรอบตามเลขที่ลงทะเบียน'),
   ('sim_academic_student',

@@ -102,6 +102,41 @@ export interface AppConfig {
     maxAttemptsPerWindow: number;
     windowSeconds: number;
   };
+  /**
+   * Undefined when embedding isn't set up on this deployment (mirrors how
+   * `oidc` above is optional) -- see config/superset/bootstrap_embed.py,
+   * which creates the service account and enables embedding for the ops
+   * dashboard.
+   */
+  supersetEmbed: {
+    /** Where this service (server-to-server, inside the compose network) reaches Superset's REST API. */
+    internalOrigin: string;
+    /** Where the browser reaches Superset -- handed back to the portal for the embed iframe's src/CSP. */
+    publicOrigin: string;
+    serviceUsername: string;
+    servicePassword: string;
+    /**
+     * Portal-facing dashboard key -> Superset embed UUID, e.g. {"ops": "<uuid>"}.
+     * Populated from SUPERSET_EMBED_DASHBOARDS, itself copied from what
+     * config/superset/bootstrap_embed.py prints. Adding a dashboard is an
+     * .env edit, never a code change -- see README §6.13.
+     */
+    dashboards: Map<string, string>;
+  } | undefined;
+  /** Undefined when steward uploads aren't set up (no RustFS credentials). */
+  rustfs: {
+    endpoint: string;
+    region: string;
+    accessKey: string;
+    secretKey: string;
+    bucket: string;
+  } | undefined;
+  /** Undefined when Trino ingestion credentials are not configured. */
+  trino: {
+    endpoint: string;
+    username: string;
+    password: string;
+  } | undefined;
 }
 
 export function readConfig(): AppConfig {
@@ -166,5 +201,87 @@ export function readConfig(): AppConfig {
       maxAttemptsPerWindow: number('PASSWORD_LOGIN_MAX_ATTEMPTS', 8),
       windowSeconds: number('PASSWORD_LOGIN_WINDOW_SECONDS', 15 * 60),
     },
+    supersetEmbed: readSupersetEmbedConfig(),
+    rustfs: readRustfsConfig(),
+    trino: readTrinoConfig(),
+  };
+}
+
+/**
+ * Parses "key1=uuid1,key2=uuid2" into a Map -- the same "key=value" shape
+ * config/superset/bootstrap_embed.py prints and SUPERSET_EMBED_DASHBOARD_SLUGS
+ * already uses, so there's one format to remember, not two. One malformed
+ * entry does not take the rest down -- it is dropped with a warning, since an
+ * operator hand-edits this value and a stray comma should not disable every
+ * other already-working dashboard.
+ */
+function parseDashboardMap(raw: string): Map<string, string> {
+  const dashboards = new Map<string, string>();
+  for (const entry of raw.split(',')) {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const separator = trimmed.indexOf('=');
+    if (separator <= 0 || separator === trimmed.length - 1) {
+      console.warn(`[auth] ignoring malformed SUPERSET_EMBED_DASHBOARDS entry: ${trimmed}`);
+      continue;
+    }
+    dashboards.set(trimmed.slice(0, separator).trim(), trimmed.slice(separator + 1).trim());
+  }
+  return dashboards;
+}
+
+function readSupersetEmbedConfig(): AppConfig['supersetEmbed'] {
+  const publicOrigin = optional('SUPERSET_EMBED_ORIGIN');
+  const servicePassword = optional('SUPERSET_EMBED_SERVICE_PASSWORD');
+  const dashboardsRaw = optional('SUPERSET_EMBED_DASHBOARDS');
+  if (!publicOrigin || !servicePassword || !dashboardsRaw) {
+    return undefined;
+  }
+  const dashboards = parseDashboardMap(dashboardsRaw);
+  if (dashboards.size === 0) {
+    return undefined;
+  }
+  return {
+    // Not the browser-facing origin: this process calls Superset over the
+    // compose network, where "localhost" would mean this container, not
+    // Superset's.
+    internalOrigin: (optional('SUPERSET_EMBED_INTERNAL_ORIGIN') ?? 'http://superset:8088').replace(/\/+$/, ''),
+    publicOrigin: publicOrigin.replace(/\/+$/, ''),
+    serviceUsername: optional('SUPERSET_EMBED_SERVICE_USERNAME') ?? 'psu-embed',
+    servicePassword,
+    dashboards,
+  };
+}
+
+function readRustfsConfig(): AppConfig['rustfs'] {
+  const accessKey = optional('RUSTFS_ACCESS_KEY');
+  const secretKey = optional('RUSTFS_SECRET_KEY');
+  if (!accessKey || !secretKey) {
+    return undefined;
+  }
+  return {
+    endpoint: optional('RUSTFS_ENDPOINT') ?? 'http://rustfs:9000',
+    // RustFS has no real AWS region, but the S3 SDK always requires one --
+    // placeholder, matches config/trino/catalog/hive.properties and
+    // polaris.properties, which hit the same requirement against this same
+    // storage.
+    region: 'us-west-2',
+    accessKey,
+    secretKey,
+    bucket: optional('RUSTFS_BUCKET') ?? 'psu-lakehouse',
+  };
+}
+
+function readTrinoConfig(): AppConfig['trino'] {
+  const password = optional('TRINO_INGESTION_PASSWORD');
+  if (!password) {
+    return undefined;
+  }
+  return {
+    endpoint: optional('TRINO_ENDPOINT') ?? 'https://trino:8443',
+    username: optional('TRINO_INGESTION_USERNAME') ?? 'nifi',
+    password,
   };
 }

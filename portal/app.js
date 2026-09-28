@@ -44,7 +44,15 @@
    * rather than leaving one panel in the language it was first drawn in.
    */
   const roles = {
-    viewer: { action: "service", target: "reports" },
+    // "reports" used to build a direct cross-port Superset URL here, which
+    // sent a viewer_exec/analyst account straight past the portal entirely.
+    // /reports.html is the dedicated, tier-gated page that embeds a live
+    // Superset dashboard (portal/reports.js) -- every "go to my reports"
+    // affordance on this page (this button, the homepage teaser card, each
+    // published catalogue item) now points there, instead of each building
+    // its own direct Superset link. SQL Lab has no in-portal equivalent, so
+    // "analyst" still goes straight to Superset for that.
+    viewer: { action: "anchor", target: "/reports.html" },
     analyst: { action: "service", target: "analytics" },
     steward: { action: "anchor", target: "#request-data" },
     operator: {
@@ -466,10 +474,12 @@
       "text-link catalog-action",
       t(availability === "published" ? "catalog.openReport" : "catalog.requestAccess")
     );
-    action.href = availability === "published" ? buildServiceUrl("reports") : "#request-data";
-    if (availability === "published") {
-      action.dataset.requiresAuth = "";
-    }
+    // /reports.html is the tier-gated page that embeds the live dashboard
+    // (portal/reports.js); it does its own "not signed in yet" redirect with
+    // the right destination, so this link does not need the generic
+    // data-requires-auth rewrite (which would only know how to send an
+    // anonymous visitor back to *this* page, not on to /reports.html).
+    action.href = availability === "published" ? "/reports.html" : "#request-data";
     action.append(element("span", null, "\u2192"));
     item.append(action);
 
@@ -705,7 +715,27 @@
         role.textContent = unit ? `${type} · ${unit}` : type;
       }
     }
+
+    const uploadLink = document.querySelector("#account-upload-link");
+    if (uploadLink) {
+      uploadLink.hidden = !(
+        authState.authenticated && authState.user && authState.user.accessTier === "steward"
+      );
+    }
+
+    const reviewLink = document.querySelector("#account-review-link");
+    if (reviewLink) {
+      reviewLink.hidden = !(
+        authState.authenticated &&
+        authState.user &&
+        (authState.user.accessTier === "analyst" || authState.user.accessTier === "developer")
+      );
+    }
   }
+
+  // Embedded-dashboard mounting itself now lives on the dedicated
+  // /reports.html page (portal/reports.js) -- viewer_exec/analyst/developer
+  // accounts are sent there instead of seeing it inline on this page.
 
   // Catalogue actions follow the sign-in state: an anonymous reader is sent to
   // PSU Passport first and returned to this page, rather than to a reporting

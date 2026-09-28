@@ -72,10 +72,12 @@ runs AS (
 ),
 domain_label AS (
   SELECT * FROM (VALUES
-    ('academic',  'วิชาการ',      'Academic',   1),
-    ('student',   'นักศึกษา',     'Students',   2),
-    ('personnel', 'บุคลากร',      'Staff',      3),
-    ('unsorted',  'ยังไม่จัดหมวด', 'Unsorted',   4)
+    ('student',            'นักศึกษา',       'Students',         1),
+    ('personnel',          'บุคลากร',        'Staff',            2),
+    ('research',           'งานวิจัย',       'Research',         3),
+    ('academic_services',  'บริการวิชาการ',  'Academic services', 4),
+    ('indicator',          'ตัวชี้วัด',       'Indicators',       5),
+    ('unsorted',           'ยังไม่จัดหมวด',   'Unsorted',         6)
   ) AS d (key, label, label_en, sort_order)
 )
 SELECT json_build_object(
@@ -102,7 +104,10 @@ SELECT json_build_object(
       FROM domain_label AS dl
       LEFT JOIN catalog AS c ON c.domain = dl.key
       GROUP BY dl.key, dl.label, dl.label_en, dl.sort_order
-      HAVING count(c.*) > 0
+      -- Every real domain shows even with zero datasets so far (a category
+      -- with no data yet is still a category); 'unsorted' is not one of the
+      -- five and stays hidden unless something actually falls into it.
+      HAVING count(c.*) > 0 OR dl.key <> 'unsorted'
     ) AS d
   ),
   'datasets', (

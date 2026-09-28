@@ -32,6 +32,10 @@
     <script src="/i18n/th.js" defer></script>
     <script src="/i18n/en.js" defer></script>
     <script src="/i18n/index.js" defer></script>
+    <!-- Vendored, not a CDN script: matches this page's CSP (script-src 'self')
+         and the fonts' own vendoring. Only used when a signed-in account's
+         accessTier calls for an embedded dashboard. -->
+    <script src="/vendor/superset-embedded-sdk.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -68,6 +72,8 @@
       <div class="account" id="account" hidden>
         <a class="button button-secondary account-signin" id="account-signin"
            href="/login" data-i18n="account.signIn">เข้าสู่ระบบ</a>
+        <a class="text-link account-upload-link" id="account-upload-link" href="/upload.html" hidden data-i18n="account.uploadLink">อัปโหลดข้อมูล</a>
+        <a class="text-link account-review-link" id="account-review-link" href="/review.html" hidden data-i18n="account.reviewLink">ตรวจสอบข้อมูล</a>
         <div class="account-card" id="account-card" hidden>
           <span class="account-avatar" aria-hidden="true">&#9673;</span>
           <span class="account-copy">
@@ -262,7 +268,7 @@
               <strong data-i18n="reports.emptyTitle">ถ้าเปิดแล้วเจอหน้าว่าง</strong>
               <span data-i18n="reports.emptyDetail">กลับมาหน้านี้ได้เลย ไม่ต้องลองกดเมนูเทคนิค ให้แจ้งชื่อรายงานหรือข้อมูลที่ต้องการแก่ทีมข้อมูล</span>
             </div>
-            <a class="button button-dark" data-service-link="reports" href="#start" data-i18n="reports.enter">เข้าสู่ระบบรายงานจริง</a>
+            <a class="button button-dark" href="/reports.html" data-i18n="reports.enter">เข้าสู่ระบบรายงานจริง</a>
           </article>
 
           <article class="demo-report" id="demo-report" aria-labelledby="demo-title">

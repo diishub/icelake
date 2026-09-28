@@ -100,7 +100,34 @@ if SUPERSET_OAUTH_ENABLED:
 FEATURE_FLAGS = {
     "DASHBOARD_RBAC": True,
     "CACHE_IMPERSONATION": True,
+    # Lets the portal mount a dashboard in an iframe via a short-lived guest
+    # token instead of a second Superset login -- see config/superset/
+    # bootstrap_embed.py and services/auth/src/supersetEmbed.ts.
+    "EMBEDDED_SUPERSET": True,
 }
+
+# ---------------------------------------------------------------------------
+# Embedded dashboards (guest tokens)
+# ---------------------------------------------------------------------------
+#
+# A guest token names a real portal account's own psu_username as its
+# impersonated Trino identity (services/auth/src/supersetEmbed.ts sets
+# user.username to that), so an embedded dashboard reads exactly what that
+# account's own OPA/Trino grants already allow -- never more. GUEST_ROLE_NAME
+# only governs Superset-side UI visibility of the embedded chart, not the row
+# data underneath it.
+GUEST_TOKEN_JWT_SECRET = os.environ["SUPERSET_GUEST_TOKEN_SECRET"]
+GUEST_ROLE_NAME = "Public"
+
+# guest_token is called by services/auth (server to server) with a JWT Bearer
+# access token, never a browser session cookie, so it isn't CSRF-able the
+# same way a form/cookie-authenticated view is -- the same reasoning behind
+# every other entry Superset's own default list already carries (SQL Lab's
+# chart data endpoint, dashboard screenshotting, etc). Extends rather than
+# replaces the base list, so a Superset upgrade's own additions are not lost.
+from superset.config import WTF_CSRF_EXEMPT_LIST as _BASE_CSRF_EXEMPT_LIST  # noqa: E402
+
+WTF_CSRF_EXEMPT_LIST = [*_BASE_CSRF_EXEMPT_LIST, "superset.security.api.guest_token"]
 
 CACHE_CONFIG = {
     "CACHE_TYPE": "RedisCache",

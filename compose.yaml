@@ -73,6 +73,19 @@ x-superset-common: &superset-common
     SUPERSET_OAUTH_ANALYST_GROUP: ${SUPERSET_OAUTH_ANALYST_GROUP:-psu-data-hub-analyst}
     SUPERSET_OAUTH_VIEWER_GROUP: ${SUPERSET_OAUTH_VIEWER_GROUP:-psu-data-hub-viewer}
     SUPERSET_COOKIE_SECURE: ${SUPERSET_COOKIE_SECURE:-true}
+    # Embedded dashboards (guest tokens) for the portal's role-specific pages.
+    SUPERSET_GUEST_TOKEN_SECRET: ${SUPERSET_GUEST_TOKEN_SECRET:?set SUPERSET_GUEST_TOKEN_SECRET in .env}
+    # Read by bootstrap_embed.py to restrict which origin may embed a dashboard.
+    AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-http://localhost:8085}
+    # Service account used only to mint guest tokens (services/auth/src/supersetEmbed.ts);
+    # granted can_grant_guest_token and nothing else by config/superset/bootstrap_embed.py.
+    SUPERSET_EMBED_SERVICE_USERNAME: ${SUPERSET_EMBED_SERVICE_USERNAME:-psu-embed}
+    SUPERSET_EMBED_SERVICE_PASSWORD: ${SUPERSET_EMBED_SERVICE_PASSWORD:?set SUPERSET_EMBED_SERVICE_PASSWORD in .env}
+    # "key=slug" pairs, comma separated -- one per dashboard bootstrap_embed.py
+    # should enable for embedding. Add to this list, rerun superset-init, and
+    # copy the printed SUPERSET_EMBED_DASHBOARDS line into .env; no new route
+    # or portal code needed for another dashboard.
+    SUPERSET_EMBED_DASHBOARD_SLUGS: ${SUPERSET_EMBED_DASHBOARD_SLUGS:-ops=psu-platform-operations}
   volumes:
     - ./config/superset:/app/pythonpath:ro
     - ./runtime/superset:/app/superset_home
@@ -558,6 +571,25 @@ services:
       PASSWORD_LOGIN_BCRYPT_COST: ${PASSWORD_LOGIN_BCRYPT_COST:-12}
       PASSWORD_LOGIN_MAX_ATTEMPTS: ${PASSWORD_LOGIN_MAX_ATTEMPTS:-8}
       PASSWORD_LOGIN_WINDOW_SECONDS: ${PASSWORD_LOGIN_WINDOW_SECONDS:-900}
+      # Embedded Superset dashboards for viewer_exec/analyst accounts (§ role
+      # pages). Optional: unset leaves /auth/embeds/* answering 503, same
+      # pattern as OIDC above.
+      SUPERSET_EMBED_ORIGIN: ${SUPERSET_EMBED_ORIGIN:-}
+      SUPERSET_EMBED_SERVICE_USERNAME: ${SUPERSET_EMBED_SERVICE_USERNAME:-psu-embed}
+      SUPERSET_EMBED_SERVICE_PASSWORD: ${SUPERSET_EMBED_SERVICE_PASSWORD:-}
+      # "key=uuid" pairs, comma separated -- copied from what
+      # config/superset/bootstrap_embed.py prints. The portal asks for a
+      # dashboard by key (GET /auth/embeds/<key>), never a Superset id.
+      SUPERSET_EMBED_DASHBOARDS: ${SUPERSET_EMBED_DASHBOARDS:-}
+      # Steward file uploads, staged in RustFS -- see 016-upload-log.sql.
+      # Optional: unset leaves /auth/uploads answering 503.
+      RUSTFS_ENDPOINT: ${RUSTFS_ENDPOINT:-http://rustfs:9000}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET:-psu-lakehouse}
+      TRINO_ENDPOINT: ${TRINO_ENDPOINT:-https://trino:8443}
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

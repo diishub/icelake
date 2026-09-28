@@ -573,6 +573,119 @@ is not a formality: a definition taken before the guardrail existed can carry a
 connection URL to a host that is no longer allowed, and that host never passes
 through `.env` where the other checks would see it.
 
+### 6.13 Role-specific portal pages
+
+Signing in now changes what the portal shows, driven by the account's own
+`access_tier` (`identity.app_user.access_tier`, §4), not by anything the
+browser decides on its own:
+
+- **`viewer_exec` / `analyst`** are sent to `/reports.html` (a dedicated
+  page, `portal/reports.js` -- the same shape as `/upload.html` below) by
+  every "see my reports" affordance on the homepage: the role-guidance
+  panel's action button, the `#reports` teaser card, and each published
+  catalogue item's "เปิดรายงาน" link. `/reports.html` checks the account's
+  own tier itself (403-equivalent client-side message for a signed-in
+  account without access, redirect to `/login?next=/reports.html` if signed
+  out) and embeds a live Superset dashboard via a Superset guest token
+  (`GET /auth/embeds/<key>`, `<key>` from `portal/config.js`'s
+  `embeddedDashboardKey`) instead of a second Superset login. The route is
+  generic -- `<key>` is looked up in `SUPERSET_EMBED_DASHBOARDS`, never a
+  hardcoded dashboard, so adding another dashboard later is a config change
+  in both places, not new code (see the setup steps below). The query
+  underneath still runs as that account's own Trino identity -- the guest
+  token carries `psu_username`, which `config/superset/bootstrap_database.py`'s
+  `impersonate_user = True` turns into the same OPA-checked Trino query any
+  other client from that account would run. Today `portal/config.js` points
+  at the ops dashboard from §6.11 as a working proof of the embedding
+  pipeline itself; a `viewer_exec` account correctly sees it empty
+  (`platform.ingest` is analyst/admin-only in `config/opa/trino.rego`, by
+  design) until a `published`-schema dashboard exists for executives, which
+  is separate, later content work, not a bug in this wiring.
+- **`steward`** gets a link to `/upload.html`, a small authenticated page for
+  staging a `.csv`, `.pdf`, or `.docx` file. The upload lands in RustFS under
+  `staging/uploads/<org_unit>/<upload_id>/...` and is logged in
+  `identity.upload_event` with `status = 'pending_review'` -- it does **not**
+  register a table, classify a column, or reach Iceberg/Superset by itself.
+  A `.pdf`/`.docx` also gets its plain text extracted server-side
+  (`services/auth/src/textExtract.ts`, `unpdf`/`mammoth`) and staged as a
+  `<original key>.extracted.txt` sibling object -- for the platform-team
+  reviewer to read before deciding, not shown anywhere else; extraction
+  failure (a corrupt or unusually-encoded file) does not fail the upload, it
+  just leaves `extracted_text_key` null and the reviewer inspects the
+  original directly. Turning a staged `.csv` into a registered, classified,
+  publishable table is still the platform team's action via the registry in
+  §6.8; an uploaded file has had no human column-classification/lawful-basis
+  review yet, the same gate every database-sourced table already has to
+  pass. A `.pdf`/`.docx` has no columns to classify -- reviewing one only
+  records the decision (see below), it does not create anything in Trino.
+
+Setting up the embedded-dashboard path on a fresh install:
+
+```bash
+# .env: set SUPERSET_GUEST_TOKEN_SECRET and SUPERSET_EMBED_SERVICE_PASSWORD
+# (both required, no default -- see .env.example)
+docker compose up -d --force-recreate superset-init superset
+```
+
+`config/superset/bootstrap_embed.py` (run by `bootstrap.sh`, part of
+`superset-init`) reads `SUPERSET_EMBED_DASHBOARD_SLUGS` -- `key=slug` pairs,
+comma separated (default `ops=psu-platform-operations`) -- enables embedding
+for each dashboard that already exists, and prints a ready-to-paste line:
+`SUPERSET_EMBED_DASHBOARDS=ops=<uuid>`. Copy that whole line into `.env` and
+recreate `psu-auth`. Until `SUPERSET_EMBED_DASHBOARDS` is set,
+`/auth/embeds/<key>` answers 503 rather than failing partway through, the
+same pattern OIDC being unconfigured uses elsewhere in this service; asking
+for a `<key>` not in that map answers 404.
+
+**Adding a second dashboard later** (once a real `published`-schema one
+exists): append its `key=slug` to `SUPERSET_EMBED_DASHBOARD_SLUGS`, recreate
+`superset-init`, append the newly printed `key=uuid` to
+`SUPERSET_EMBED_DASHBOARDS`, recreate `psu-auth`, then point
+`portal/config.js`'s `embeddedDashboardKey` (or a future per-role/per-page
+key) at it -- no route or backend code changes either time.
+
+Uploads need no extra setup beyond what `RUSTFS_ACCESS_KEY`/`RUSTFS_SECRET_KEY`
+already provide.
+
+**Reviewing a staged upload.** `identity.upload_event` rows sit at
+`status = 'pending_review'` until a platform-team operator runs
+`scripts/review-upload.sh`. The steps differ by file kind (`identity.
+upload_event.file_kind`):
+
+For a `.csv`:
+1. Open the object in RustFS Console (§6.5) to see its header and a few
+   rows -- there is no in-portal preview.
+2. Write a `review.json` naming every column in the header and classifying
+   each `public` (safe to load), `internal`, or `sensitive` -- only
+   `public` columns are ever read into Iceberg, the same
+   declare-then-filter rule `config/nifi/scripts/extract_safe_columns.groovy`
+   applies to database sources.
+3. `./scripts/review-upload.sh <upload_id> review.json` -- creates
+   `polaris.raw.steward_<org_unit>_<table_suffix>` with only the approved
+   columns (bridged through `hive.raw_staging`, the same technique
+   `config/nifi/scripts/load_csv_into_iceberg.groovy` uses, generalized
+   instead of that script's one hardcoded product schema), and marks the
+   upload `registered`.
+
+For a `.pdf`/`.docx` (no columns to classify):
+1. Open `<the object's own key>.extracted.txt` in RustFS Console to read the
+   extracted text (the original file, if `extracted_text_key` is null
+   because extraction failed).
+2. `./scripts/review-upload.sh <upload_id> --approve-document --reviewer
+   <name>` -- only records the decision (`status = 'registered'`,
+   `target_table` stays null); nothing is created in Trino.
+
+Either kind: `./scripts/review-upload.sh <upload_id> --reject "<reason>"
+--reviewer <name>` to decline it instead. Reviewing a `.csv` with
+`--approve-document`, or a `.pdf`/`.docx` with a `review.json`, is refused --
+the script checks `file_kind` first.
+
+This gets a reviewed table into Trino -- it does **not** add it to the
+portal catalogue or a Superset dashboard. Those are the same separate,
+manual steps as any other table: register it in `ingest.source_table` (§6.8)
+to appear in the catalogue, and/or point a new Superset dataset at it the
+way `config/superset/bootstrap_ops_dashboard.py` does for the ops dashboard.
+
 ## 7. Add or change users
 
 The current automation owns only the shared **development personas** in

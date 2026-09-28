@@ -13,6 +13,13 @@ window.PSU_PORTAL_CONFIG = Object.freeze({
     en: "Pilot · test data only"
   },
   publishedReportsReady: false,
+  // Which dashboard /reports.html (portal/reports.js) embeds for a
+  // viewer_exec/analyst/developer account, matched against a key in
+  // SUPERSET_EMBED_DASHBOARDS (services/auth/.env) -- see
+  // config/superset/bootstrap_embed.py and README §6.13. Change this (no
+  // code change) once a real dashboard exists to show instead of the
+  // ops-dashboard proof-of-concept.
+  embeddedDashboardKey: "ops",
   publishedStateMessage: {
     th: "เครื่อง Pilot รอบตั้งต้นยังไม่มีชุดข้อมูลที่ประกาศเผยแพร่ จึงอาจพบรายการว่างหลังล็อกอิน",
     en: "The first Pilot round has no published datasets yet, so the list may be empty after you sign in."

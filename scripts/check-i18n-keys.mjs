@@ -13,6 +13,9 @@ import fs from "node:fs";
 const pages = [
   ["index.html", "app.js"],
   ["login.html", "login.js"],
+  ["upload.html", "upload.js"],
+  ["reports.html", "reports.js"],
+  ["review.html", "review.js"],
 ];
 
 const used = new Set();
