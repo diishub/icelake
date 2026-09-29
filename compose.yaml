@@ -119,6 +119,7 @@ services:
   rustfs:
     image: rustfs/rustfs:1.0.0-beta.8
     restart: unless-stopped
+    user: "0:0"
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
