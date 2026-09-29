@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/test-source-guardrail.sh
+      - run: chmod +x scripts/*.sh config/guardrail/*.sh && ./scripts/test-source-guardrail.sh
 
   stack:
     name: Full-stack tests
@@ -74,6 +74,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh config/*/*.sh || true
 
       - name: Use the CI environment fixture
         run: cp .env.ci .env
