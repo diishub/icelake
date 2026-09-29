@@ -38,8 +38,18 @@ fi
 validate_username PSU_ADMIN_USERNAME "${PSU_ADMIN_USERNAME}"
 validate_username PSU_ANALYST_USERNAME "${PSU_ANALYST_USERNAME}"
 validate_username TRINO_INGESTION_USERNAME "${TRINO_INGESTION_USERNAME}"
+validate_username TRINO_MAINTENANCE_USERNAME "${TRINO_MAINTENANCE_USERNAME}"
 
-all_usernames="${PSU_ADMIN_USERNAME} ${PSU_ANALYST_USERNAME} ${TRINO_INGESTION_USERNAME}"
+all_usernames="${PSU_ADMIN_USERNAME} ${PSU_ANALYST_USERNAME} ${TRINO_INGESTION_USERNAME} ${TRINO_MAINTENANCE_USERNAME}"
+
+# Table maintenance is a separate identity from ingestion on purpose: it
+# compacts and expires data it is not allowed to read.
+for reserved in "${PSU_ADMIN_USERNAME}" "${PSU_ANALYST_USERNAME}" "${TRINO_INGESTION_USERNAME}"; do
+  if [ "${reserved}" = "${TRINO_MAINTENANCE_USERNAME}" ]; then
+    echo "TRINO_MAINTENANCE_USERNAME must differ from every other Trino identity" >&2
+    exit 1
+  fi
+done
 
 viewer_index=1
 viewer_usernames=""
@@ -92,6 +102,7 @@ group_file_tmp="/output/groups.txt.tmp"
 {
   printf 'psu_admin:%s\n' "${PSU_ADMIN_USERNAME}"
   printf 'psu_ingestion:%s\n' "${TRINO_INGESTION_USERNAME}"
+  printf 'psu_maintenance:%s\n' "${TRINO_MAINTENANCE_USERNAME}"
   printf 'psu_analyst:%s,superset\n' "${PSU_ANALYST_USERNAME}"
   printf 'psu_viewer:%s\n' "${viewer_usernames}"
   if [ -n "${exec_usernames}" ]; then

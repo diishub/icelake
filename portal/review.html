@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="ศูนย์ตรวจสอบและอนุมัติชุดข้อมูลสำหรับนักวิเคราะห์ข้อมูล · PSU Data Hub">
+    <title>ตรวจสอบและอนุมัติข้อมูล · PSU Data Hub</title>
+    <link rel="preload" href="/fonts/sarabun-thai-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-thai-800.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/i18n/th.js" defer></script>
+    <script src="/i18n/en.js" defer></script>
+    <script src="/i18n/index.js" defer></script>
+    <script src="/review.js" defer></script>
+  </head>
+  <body class="login-body review-body">
+    <a class="skip-link" href="#review-main" data-i18n="skip">ข้ามไปยังเนื้อหาหลัก</a>
+
+    <header class="login-header">
+      <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
+        <span class="brand-mark" aria-hidden="true">PSU</span>
+        <span class="brand-copy">
+          <strong>PSU Data Hub</strong>
+        </span>
+      </a>
+      <div class="header-actions">
+        <button class="lang-switch" type="button" id="lang-switch"
+                aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel">
+          <span aria-hidden="true">&#127760;</span><span data-i18n="lang.switchTo">English</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="review-main" class="login-main review-main">
+      <div class="login-card review-card">
+        <p class="login-status" id="review-status" role="status" aria-live="polite" hidden></p>
+
+        <div id="review-content-area" hidden>
+          <div class="review-header-flex">
+            <div>
+              <h1 class="login-heading" data-i18n="review.heading">ศูนย์ตรวจสอบและอนุมัติข้อมูล</h1>
+              <p class="login-subheading" data-i18n="review.subheading">ตรวจสอบโครงสร้างข้อมูล จำแนกชั้นความลับ และอนุมัตินำเข้าสู่ Iceberg Raw Zone</p>
+            </div>
+            <button class="button button-ghost review-refresh-btn" type="button" id="review-refresh-btn" data-i18n="review.refresh">
+              รีเฟรชข้อมูล
+            </button>
+          </div>
+
+          <!-- Stats Summary Bar -->
+          <div class="review-stats-grid">
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="review.tabPending">รอตรวจสอบ</span>
+              <strong class="review-stat-value text-caution" id="stat-pending">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="review.tabRegistered">อนุมัติแล้ว</span>
+              <strong class="review-stat-value text-positive" id="stat-registered">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="review.tabRejected">ปฏิเสธ</span>
+              <strong class="review-stat-value text-critical" id="stat-rejected">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="review.tabAll">ทั้งหมด</span>
+              <strong class="review-stat-value" id="stat-total">0</strong>
+            </div>
+          </div>
+
+          <!-- Filter Tabs -->
+          <div class="review-tabs" role="tablist">
+            <button class="review-tab is-active" type="button" role="tab" data-filter="pending" id="tab-pending">
+              <span data-i18n="review.tabPending">รอตรวจสอบ</span>
+              <span class="review-badge-counter" id="badge-pending">0</span>
+            </button>
+            <button class="review-tab" type="button" role="tab" data-filter="all" id="tab-all" data-i18n="review.tabAll">
+              ทั้งหมด
+            </button>
+            <button class="review-tab" type="button" role="tab" data-filter="registered" id="tab-registered" data-i18n="review.tabRegistered">
+              อนุมัติแล้ว
+            </button>
+            <button class="review-tab" type="button" role="tab" data-filter="rejected" id="tab-rejected" data-i18n="review.tabRejected">
+              ปฏิเสธ
+            </button>
+          </div>
+
+          <!-- Review Items Table Container -->
+          <div class="review-table-wrapper" role="region" aria-live="polite">
+            <div id="review-list-container" class="review-list-container">
+              <p class="review-empty-state" data-i18n="review.loading">กำลังโหลดข้อมูล…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <a class="login-back" href="/" data-i18n="login.backHome">กลับหน้าแรก</a>
+    </main>
+
+    <!-- Detailed Review Modal -->
+    <div class="review-modal-backdrop" id="review-modal-backdrop" hidden>
+      <div class="review-modal" id="review-modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
+        <header class="review-modal-header">
+          <div>
+            <h2 class="review-modal-title" id="modal-heading" data-i18n="review.modalTitle">รายละเอียดการตรวจสอบชุดข้อมูล</h2>
+            <p class="review-modal-subtitle" id="modal-subtitle">—</p>
+          </div>
+          <button class="review-modal-close" type="button" id="modal-close-btn" aria-label="Close">&times;</button>
+        </header>
+
+        <div class="review-modal-body">
+          <p class="login-status" id="modal-status" role="status" aria-live="polite" hidden></p>
+          <div class="modal-feedback-alert" id="modal-alert" hidden></div>
+
+          <!-- Metadata Section -->
+          <section class="modal-section modal-meta-section">
+            <h3 class="modal-section-title" data-i18n="review.sectionMeta">ข้อมูลทั่วไป</h3>
+            <div class="modal-meta-grid">
+              <div><dt data-i18n="review.colOrgUnit">หน่วยงาน</dt><dd id="modal-meta-org">—</dd></div>
+              <div><dt data-i18n="review.colUploader">ผู้อัปโหลด</dt><dd id="modal-meta-uploader">—</dd></div>
+              <div><dt data-i18n="review.metaFileSize">ขนาดไฟล์</dt><dd id="modal-meta-size">—</dd></div>
+              <div><dt data-i18n="review.colUploadedAt">เวลาที่อัปโหลด</dt><dd id="modal-meta-date">—</dd></div>
+              <div><dt data-i18n="review.colStatus">สถานะ</dt><dd id="modal-meta-status">—</dd></div>
+              <div><dt data-i18n="review.metaUploadId">รหัสอัปโหลด (Upload ID)</dt><dd><code id="modal-meta-id">—</code></dd></div>
+            </div>
+            <div class="modal-steward-note-box" id="modal-steward-note-box" hidden>
+              <strong data-i18n="review.stewardNoteLabel">ข้อความจากเจ้าของข้อมูล:</strong>
+              <p id="modal-steward-note" class="modal-steward-note"></p>
+            </div>
+          </section>
+
+          <!-- Decision Details for already approved / rejected items -->
+          <section class="modal-section modal-decision-section" id="modal-decision-info" hidden>
+            <div class="decision-card-registered" id="decision-registered-card" hidden>
+              <h4 class="decision-heading" data-i18n="review.approvedNotice">ชุดข้อมูลนี้ได้รับการอนุมัติและลงทะเบียนแล้ว</h4>
+              <p class="decision-detail"><span data-i18n="review.reviewerLabel">ผู้ตรวจสอบ:</span> <strong id="decision-reviewer">—</strong> | <span data-i18n="review.reviewedAtLabel">เวลาที่ตรวจ:</span> <span id="decision-reviewed-at">—</span></p>
+              <div class="decision-table-info">
+                <span data-i18n="review.tablePrefixLabel">ชื่อตารางปลายทางในคลังข้อมูล:</span>
+                <code id="decision-table-name">polaris.raw.—</code>
+              </div>
+              <p class="decision-columns-count" id="decision-cols-count"></p>
+              <div class="decision-sql-box">
+                <label data-i18n="review.trinoQueryExample">คำสั่ง Trino SQL สำหรับทดสอบเรียกดูข้อมูล:</label>
+                <div class="code-copy-row">
+                  <pre><code id="decision-sql-snippet">SELECT * FROM polaris.raw."steward_sample" LIMIT 10;</code></pre>
+                  <button class="button button-ghost button-small" type="button" id="btn-copy-sql" data-i18n="review.copyText">คัดลอกข้อความ</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="decision-card-rejected" id="decision-rejected-card" hidden>
+              <h4 class="decision-heading" data-i18n="review.rejectedNotice">ชุดข้อมูลนี้ถูกปฏิเสธ</h4>
+              <p class="decision-detail"><span data-i18n="review.reviewerLabel">ผู้ตรวจสอบ:</span> <strong id="decision-rejected-by">—</strong> | <span data-i18n="review.reviewedAtLabel">เวลาที่ตรวจ:</span> <span id="decision-rejected-at">—</span></p>
+              <p class="decision-reason-row" id="decision-rejection-reason-row" hidden>
+                <span data-i18n="review.rejectionReasonLabel">เหตุผลที่ปฏิเสธ:</span>
+                <strong id="decision-rejection-reason" class="decision-rejection-text">—</strong>
+              </p>
+            </div>
+          </section>
+
+          <!-- CSV Target Table Config (for pending CSV) -->
+          <section class="modal-section" id="modal-table-config-section" hidden>
+            <h3 class="modal-section-title" data-i18n="review.sectionTableConfig">กำหนดชื่อตาราง Iceberg ปลายทาง</h3>
+            <div class="target-table-form">
+              <label for="review-table-suffix" data-i18n="review.tablePrefixLabel">ชื่อตารางปลายทางในคลังข้อมูล:</label>
+              <div class="target-table-input-group">
+                <span class="target-table-prefix" id="target-table-prefix">polaris.raw.steward_org_</span>
+                <input type="text" id="review-table-suffix" class="target-table-input"
+                       pattern="^[a-z][a-z0-9_]*$"
+                       placeholder="table_suffix"
+                       data-i18n-attr="placeholder:review.tableSuffixPlaceholder" required>
+              </div>
+              <small class="target-table-hint">
+                <span data-i18n="review.tablePrefixLabel">ชื่อตารางปลายทางในคลังข้อมูล:</span> <code id="target-table-full-preview">polaris.raw.steward_...</code> (ใช้อักษรภาษาอังกฤษตัวพิมพ์เล็ก ตัวเลข และ _ เท่านั้น)
+              </small>
+            </div>
+          </section>
+
+          <!-- CSV Column Classification Section (for pending CSV) -->
+          <section class="modal-section" id="modal-columns-section" hidden>
+            <div class="section-title-flex">
+              <h3 class="modal-section-title" data-i18n="review.sectionColumns">จัดชั้นความลับคอลัมน์ (Data Classification)</h3>
+              <div class="column-summary-pills">
+                <span class="summary-pill pill-included">
+                  <span data-i18n="review.summaryIncluded">คอลัมน์ที่เผยแพร่ใน Iceberg:</span>
+                  <strong id="summary-public-count">0</strong>
+                </span>
+                <span class="summary-pill pill-excluded">
+                  <span data-i18n="review.summaryExcluded">คอลัมน์ที่ไม่เผยแพร่ (ถูกตัดออก):</span>
+                  <strong id="summary-excluded-count">0</strong>
+                </span>
+              </div>
+            </div>
+
+            <div class="guardrail-alert" id="guardrail-alert" hidden data-i18n="review.guardrailWarning">
+              ⚠️ ต้องเลือกอย่างน้อย 1 คอลัมน์เป็น Public จึงจะสร้างตารางได้
+            </div>
+
+            <div class="columns-table-wrapper">
+              <table class="columns-table" id="columns-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="review.columnColName">ชื่อคอลัมน์ (SQL)</th>
+                    <th data-i18n="review.columnOriginalName">ชื่อดั้งเดิม</th>
+                    <th data-i18n="review.columnType">ประเภทข้อมูล</th>
+                    <th data-i18n="review.columnClassification">ชั้นความลับ</th>
+                    <th>ตัวอย่างค่า</th>
+                  </tr>
+                </thead>
+                <tbody id="columns-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- CSV Sample Data Grid -->
+          <section class="modal-section" id="modal-data-preview-section" hidden>
+            <h3 class="modal-section-title" data-i18n="review.sectionDataPreview">ตัวอย่างข้อมูล (Sample Data)</h3>
+            <div class="sample-grid-wrapper">
+              <table class="sample-grid-table" id="sample-grid-table">
+                <thead id="sample-grid-thead"></thead>
+                <tbody id="sample-grid-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Document Extracted Text Section (for PDF / DOCX) -->
+          <section class="modal-section" id="modal-document-section" hidden>
+            <div class="section-title-flex">
+              <h3 class="modal-section-title" data-i18n="review.sectionExtractedText">ข้อความที่สกัดได้จากเอกสาร (Extracted Text)</h3>
+              <button class="button button-ghost button-small" type="button" id="btn-copy-doc-text" data-i18n="review.copyText">คัดลอกข้อความ</button>
+            </div>
+            <div class="document-text-container">
+              <pre id="document-text-content" class="document-text-content"></pre>
+              <p id="document-no-text" class="document-no-text" hidden data-i18n="review.noExtractedText">ไม่พบข้อความที่สกัดได้ในไฟล์นี้</p>
+            </div>
+          </section>
+        </div>
+
+        <footer class="review-modal-footer">
+          <div class="footer-left">
+            <button class="button button-ghost" type="button" id="modal-close-footer-btn" data-i18n="review.btnClose">ปิด</button>
+          </div>
+          <div class="footer-actions" id="modal-pending-actions" hidden>
+            <button class="button button-danger" type="button" id="btn-reject-upload" data-i18n="review.btnReject">ปฏิเสธชุดข้อมูล</button>
+            <button class="button button-positive" type="button" id="btn-approve-upload" data-i18n="review.btnApprove">
+              อนุมัติและสร้างตาราง Iceberg
+            </button>
+          </div>
+          <div class="modal-reject-drawer" id="modal-reject-drawer" hidden>
+            <label for="reject-reason-input" class="reject-drawer-label" data-i18n="review.rejectReasonPrompt">ระบุเหตุผลในการปฏิเสธ (เพื่อแจ้งให้เจ้าของข้อมูลทราบ):</label>
+            <textarea id="reject-reason-input" rows="2" maxlength="500" class="reject-reason-input"
+                      placeholder="เช่น รูปแบบข้อมูลไม่ถูกต้อง หรือมีคอลัมน์สำคัญขาดหายไป"
+                      data-i18n-attr="placeholder:review.rejectReasonPlaceholder"></textarea>
+            <div class="reject-drawer-buttons">
+              <button class="button button-ghost button-small" type="button" id="btn-cancel-reject" data-i18n="review.btnCancel">ยกเลิก</button>
+              <button class="button button-danger button-small" type="button" id="btn-confirm-reject" data-i18n="review.btnConfirmReject">ยืนยันปฏิเสธ</button>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบและอ่านบัญชีรายการชุดข้อมูล กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
+  </body>
+</html>

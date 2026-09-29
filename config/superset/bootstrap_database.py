@@ -1,5 +1,20 @@
+import json
+import os
+from urllib.parse import quote
+
 from superset.app import create_app
 
+# Trino authenticates now, so Superset arrives with a credential of its own
+# rather than simply asserting a username. It still impersonates the signed-in
+# user for every query -- authentication proves who the connection is,
+# impersonation is what decides whose permissions apply.
+TRINO_PASSWORD = os.environ["SUPERSET_TRINO_PASSWORD"]
+
+# The certificate is self-signed by this stack, so there is nothing to verify
+# it against. The transport is unverified; the identity is not.
+ENGINE_EXTRA = json.dumps(
+    {"engine_params": {"connect_args": {"http_scheme": "https", "verify": False}}}
+)
 
 app = create_app()
 with app.app_context():
@@ -13,7 +28,10 @@ with app.app_context():
         database = Database(database_name="PSU Iceberg")
         db.session.add(database)
 
-    database.sqlalchemy_uri = "trino://superset@trino:8080/polaris"
+    database.sqlalchemy_uri = (
+        f"trino://superset:{quote(TRINO_PASSWORD, safe='')}@trino:8443/polaris"
+    )
+    database.extra = ENGINE_EXTRA
     database.impersonate_user = True
     database.expose_in_sqllab = True
     database.allow_ctas = False
