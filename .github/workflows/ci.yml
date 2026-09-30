@@ -75,8 +75,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up swap space
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Make scripts executable
-        run: chmod +x scripts/*.sh config/*/*.sh || true
+        run: chmod -R +x scripts config || true
 
       - name: Prepare runtime directories
         run: |

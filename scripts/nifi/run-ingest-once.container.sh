@@ -26,13 +26,22 @@ if [ -z "${group_id}" ]; then
   exit 1
 fi
 
-# A processor that cannot start is a configuration error, not something to
-# wait out, so report it before trying.
+# Processors validate asynchronously in background threads after creation.
+# Wait for validation to finish before checking for configuration errors.
+for _ in $(seq 1 30); do
+  validating="$(api GET "/process-groups/${group_id}/processors" \
+    | jq -r '.processors[] | select(.component.validationStatus == "VALIDATING") | .component.name')"
+  if [ -z "${validating}" ]; then
+    break
+  fi
+  sleep 2
+done
+
 invalid="$(api GET "/process-groups/${group_id}/processors" \
   | jq -r '.processors[] | select(.component.validationStatus != "VALID")
            | "\(.component.name): \(.component.validationErrors // ["still validating"] | join("; "))"')"
 if [ -n "${invalid}" ]; then
-  echo "these processors are not valid yet:" >&2
+  echo "these processors are not valid:" >&2
   echo "${invalid}" >&2
   exit 1
 fi
