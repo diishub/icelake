@@ -49,9 +49,22 @@
           <p class="login-note login-note-warning" id="psu-passport-note" hidden
              data-i18n="login.psuPassportUnavailable">PSU Passport ยังไม่เปิดใช้งานบนระบบนี้ ใช้อีเมลและรหัสผ่านด้านล่างแทน</p>
 
-          <a class="button button-primary login-psu-button" id="psu-passport-button" href="#">
-            <span class="login-psu-mark" aria-hidden="true">PSU</span>
-            <span data-i18n="login.psuPassportButton">เข้าสู่ระบบด้วย PSU Passport</span>
+          <a class="login-psu-button" id="psu-passport-button" href="#" role="button">
+            <div class="login-psu-button-content">
+              <div class="login-psu-logo-container">
+                <img src="/assets/psu-logo.png" alt="PSU Passport Logo" class="login-psu-logo-img">
+              </div>
+              <div class="login-psu-text-group">
+                <span class="login-psu-eyebrow">PSU PASSPORT</span>
+                <span class="login-psu-title" data-i18n="login.psuPassportButton">เข้าสู่ระบบด้วย PSU Passport</span>
+              </div>
+            </div>
+            <div class="login-psu-action-icon" aria-hidden="true">
+              <svg class="login-psu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="m12 5 7 7-7 7"></path>
+              </svg>
+            </div>
           </a>
 
           <div class="login-divider" id="login-divider">

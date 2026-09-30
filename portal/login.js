@@ -128,8 +128,14 @@
   async function configurePsuPassportButton() {
     const button = document.querySelector("#psu-passport-button");
     const note = document.querySelector("#psu-passport-note");
+    const divider = document.querySelector("#login-divider");
     if (!button) {
       return;
+    }
+
+    button.hidden = false;
+    if (divider) {
+      divider.hidden = false;
     }
 
     try {
@@ -137,20 +143,25 @@
       const body = response.ok ? await response.json() : { psuPassport: false };
       if (body.psuPassport) {
         button.href = `/auth/login?next=${encodeURIComponent(next)}`;
-        button.hidden = false;
+        if (note) {
+          note.hidden = true;
+        }
         return;
       }
     } catch (_error) {
-      // Treated the same as psuPassport: false below.
+      // Handled below
     }
 
-    // Not configured on this deployment: hide the button and the divider
-    // rather than offer a link that would answer 503, and say why so a
-    // reader does not wonder whether the page is broken.
-    hidePsuPassportButton();
-    if (note) {
-      note.hidden = false;
-    }
+    // When PSU Passport is not yet configured (e.g. localhost development):
+    // Keep button visible like in dotblue, but handle click gracefully with a helpful message.
+    button.href = "#";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (note) {
+        note.hidden = false;
+        note.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
   }
 
   function configureEmailForm() {
