@@ -41,8 +41,23 @@ fi
 credentials_id="$(api GET /flow/process-groups/root/controller-services \
   | jq -r '.controllerServices[] | select(.component.name == "RustFS Credentials") | .id')"
 if [ -z "${credentials_id}" ]; then
-  echo "the RustFS Credentials controller service is missing at the root level" >&2
-  exit 1
+  echo "creating RustFS Credentials controller service..."
+  credentials_id="$(jq -n \
+    --arg key "${RUSTFS_ACCESS_KEY:-}" \
+    --arg secret "${RUSTFS_SECRET_KEY:-}" \
+    '{revision:{version:0},
+      component:{
+        name:"RustFS Credentials",
+        type:"org.apache.nifi.processors.aws.credentials.provider.service.AWSCredentialsProviderControllerService",
+        bundle:{group:"org.apache.nifi",artifact:"nifi-aws-nar",version:"2.10.0"},
+        properties:{
+          "Access Key ID":$key,
+          "Secret Access Key":$secret
+        }
+      }}' | api POST "/process-groups/${root_id}/controller-services" -d @- | jq -r .id)"
+  api PUT "/controller-services/${credentials_id}/run-status" \
+    -d "$(jq -n --arg id "${credentials_id}" '{revision:{version:1}, state:"ENABLED"}')" >/dev/null || true
+  echo "created and enabled RustFS Credentials (${credentials_id})"
 fi
 
 group_id="$(jq -n --arg name "${GROUP_NAME}" \

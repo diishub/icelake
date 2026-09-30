@@ -494,6 +494,8 @@ services:
       # own credentials live under (credentials_env_prefix).
       PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
       RUSTFS_BUCKET: ${RUSTFS_BUCKET}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
       TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
       SOURCE_SIM_READER_USER: ${SOURCE_SIM_READER_USER:-ingest_reader}
@@ -524,6 +526,27 @@ services:
     depends_on:
       source-guard:
         condition: service_completed_successfully
+      nifi-conf-setup:
+        condition: service_completed_successfully
+
+  # Populates runtime/nifi/conf from the image on first start if nifi.properties is missing.
+  # Prevents mounting an empty host directory over the image's default configuration.
+  nifi-conf-setup:
+    image: apache/nifi:2.10.0
+    restart: "no"
+    user: "0:0"
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        if [ ! -f /target/nifi.properties ]; then
+          echo "Populating runtime/nifi/conf from image..."
+          cp -r /opt/nifi/nifi-current/conf/* /target/
+          chmod -R 777 /target
+          echo "Done populating runtime/nifi/conf"
+        fi
+    volumes:
+      - ./runtime/nifi/conf:/target
 
 
   # Sign-in for the portal. Behind a profile because it cannot start without a
