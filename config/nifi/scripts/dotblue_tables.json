@@ -1,0 +1,94 @@
+{
+  "_comment": [
+    "Target schema for the dotBlue aggregate extracts loaded by",
+    "load_csv_into_iceberg.groovy. Types are declared here rather than",
+    "inferred from the CSV, so a column never silently changes type between",
+    "runs and a malformed file fails loudly instead of landing as VARCHAR.",
+    "",
+    "Every table here is an AGGREGATE. No row identifies a person: there is no",
+    "user id, e-mail address, conversation title, message text or credential in",
+    "any column below, and group/period cells holding fewer than 10 distinct",
+    "users are suppressed upstream in the extract itself.",
+    "",
+    "load_mode full_refresh: each run replaces the table contents, because",
+    "these are snapshot aggregates recomputed from the whole source, not an",
+    "incremental append."
+  ],
+  "source_system": "dotblue-mongodb-archive",
+  "load_mode": "full_refresh",
+  "tables": {
+    "dotblue_collection_profile": {
+      "description": "One row per MongoDB collection: document count and stored size.",
+      "columns": [
+        { "name": "collection", "type": "VARCHAR" },
+        { "name": "doc_count", "type": "BIGINT" },
+        { "name": "data_mb", "type": "DOUBLE" }
+      ]
+    },
+    "dotblue_conv_by_hour": {
+      "description": "Conversations started per hour of day, Asia/Bangkok.",
+      "columns": [
+        { "name": "hour_th", "type": "INTEGER" },
+        { "name": "conversations", "type": "BIGINT" },
+        { "name": "unique_users", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_conv_by_month": {
+      "description": "Conversations, distinct users and messages per calendar month, Asia/Bangkok.",
+      "columns": [
+        { "name": "month", "type": "VARCHAR" },
+        { "name": "conversations", "type": "BIGINT" },
+        { "name": "unique_users", "type": "BIGINT" },
+        { "name": "messages", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_conv_by_dow": {
+      "description": "Conversations started per day of week, Asia/Bangkok.",
+      "columns": [
+        { "name": "dow_num", "type": "INTEGER" },
+        { "name": "dow_th", "type": "VARCHAR" },
+        { "name": "conversations", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_conv_by_endpoint": {
+      "description": "Conversations per LibreChat endpoint and preset.",
+      "columns": [
+        { "name": "endpoint", "type": "VARCHAR" },
+        { "name": "spec", "type": "VARCHAR" },
+        { "name": "conversations", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_user_by_group": {
+      "description": "Users and conversations per e-mail-domain group. Groups below k=10 suppressed.",
+      "columns": [
+        { "name": "user_group", "type": "VARCHAR" },
+        { "name": "users", "type": "BIGINT" },
+        { "name": "conversations", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_conv_by_group_month": {
+      "description": "Conversations per group per month. Cells below k=10 distinct users suppressed.",
+      "columns": [
+        { "name": "month", "type": "VARCHAR" },
+        { "name": "user_group", "type": "VARCHAR" },
+        { "name": "conversations", "type": "BIGINT" },
+        { "name": "unique_users", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_user_cohort": {
+      "description": "New user registrations per calendar month, Asia/Bangkok.",
+      "columns": [
+        { "name": "signup_month", "type": "VARCHAR" },
+        { "name": "new_users", "type": "BIGINT" }
+      ]
+    },
+    "dotblue_user_mix": {
+      "description": "Long-format counts: auth provider, role, and conversation state.",
+      "columns": [
+        { "name": "dimension", "type": "VARCHAR" },
+        { "name": "value", "type": "VARCHAR" },
+        { "name": "users", "type": "BIGINT" }
+      ]
+    }
+  }
+}

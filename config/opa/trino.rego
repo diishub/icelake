@@ -13,8 +13,14 @@ is_ingestion if "psu_ingestion" in groups
 is_analyst if "psu_analyst" in groups
 is_viewer if "psu_viewer" in groups
 is_viewer_exec if "psu_viewer_exec" in groups
+# A data owner reviewing their own unit's data before it is released more
+# broadly. Deliberately not an alias for analyst or viewer: it reads a schema
+# analyst-only readers see (curated) but, unlike analyst, only its own org
+# unit's rows -- a shape neither existing tier had.
+is_steward if "psu_steward" in groups
 is_reader if is_analyst
 is_reader if is_viewer
+is_reader if is_steward
 
 # Non-executive viewers are scoped to their org unit(s) via psu_viewer_org_<unit>
 # groups rendered by config/trino/render-groups.sh from PSU_VIEWER_<n>_ORG_UNIT.
@@ -22,6 +28,16 @@ viewer_org_units := {ou |
   some g in groups
   startswith(g, "psu_viewer_org_")
   ou := trim_prefix(g, "psu_viewer_org_")
+}
+
+# Same shape, for stewards. A steward with none is a data-entry error, not a
+# state that should read anything -- see steward_is_scoped below, which has no
+# "exec" escape hatch the way a viewer does: there is no such thing as a data
+# owner for the whole university.
+steward_org_units := {ou |
+  some g in groups
+  startswith(g, "psu_steward_org_")
+  ou := trim_prefix(g, "psu_steward_org_")
 }
 
 table := input.action.resource.table
@@ -87,12 +103,42 @@ allow if {
   table.schemaName in {"curated", "published"}
 }
 
+# A viewer reads published only once their scope is known: either they are an
+# executive viewer, or they carry at least one org-unit group. A viewer with
+# neither used to fall through to this rule unfiltered, because the row-filter
+# rule below produces nothing when viewer_org_units is empty -- so the absence
+# of a scope granted the widest view instead of the narrowest. Single sign-on
+# users arrive with no org group at all, which is what surfaced it.
 allow if {
   is_viewer
   is_select
   table.catalogName == "polaris"
   table.schemaName == "published"
+  viewer_is_scoped
 }
+
+viewer_is_scoped if is_viewer_exec
+
+viewer_is_scoped if count(viewer_org_units) > 0
+
+# A steward reads curated and published, but only their own org unit's rows --
+# the row filter below is what actually narrows it; this just gates access to
+# the table at all, the same "no scope, no access" reasoning as viewer_is_scoped.
+allow if {
+  is_steward
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName in {"curated", "published"}
+  count(steward_org_units) > 0
+}
+
+# Write access for stewards is not granted here. Submitting or correcting a
+# unit's data currently goes through the coordination path in the portal's
+# request-data section, not a direct SQL write: nothing in this policy or in
+# Trino enforces a row-level boundary on INSERT/UPDATE/DELETE the way the row
+# filter below does for reads, so granting DML to a steward today would mean
+# trusting them with every row in curated/published, not just their own
+# unit's. Revisit once there is a write path that can actually be scoped.
 
 # Analysts additionally get row-level write access on curated and published —
 # schema/table DDL (CreateTable, DropTable, ...) stays admin/ingestion-only.
@@ -157,4 +203,115 @@ rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
   table.schemaName == "published"
   table.tableName in data.org_scoped_tables
   some ou in viewer_org_units
+}
+
+# Same mechanism as the viewer filter above, extended to curated as well as
+# published: a steward's read access covers both schemas, so both need the
+# filter or curated would be readable without any row boundary at all.
+rowFilters contains {"expression": sprintf("org_unit = '%s'", [ou])} if {
+  is_steward
+  table.schemaName in {"curated", "published"}
+  table.tableName in data.org_scoped_tables
+  some ou in steward_org_units
+}
+
+# ---------------------------------------------------------------------------
+# Table maintenance
+# ---------------------------------------------------------------------------
+# Compaction, snapshot expiry and orphan-file removal run as their own
+# identity, separate from ingestion. That separation is the point: this
+# identity reshapes and deletes files but is never granted SelectFromColumns,
+# so a maintenance job cannot read a single row of the data it maintains.
+#
+# It matters for more than tidiness here. Dropping an Iceberg table in this
+# stack does not delete its data files, so removing personal data on request
+# is only actually complete once orphan-file removal has run.
+is_maintenance if "psu_maintenance" in groups
+
+# Trino has used more than one operation name for ALTER TABLE ... EXECUTE
+# across versions; both are listed so an upgrade does not silently start
+# denying maintenance.
+maintenance_operations := {
+  "ExecuteTableProcedure",
+  "AlterTableExecute",
+}
+
+allow if {
+  is_maintenance
+  operation in maintenance_operations
+  table.catalogName == "polaris"
+  table.schemaName in {"raw", "curated", "published"}
+}
+
+# Maintenance still has to be able to start a query and list what exists.
+allow if {
+  is_maintenance
+  operation in read_control_operations
+}
+
+# Reading the table list is metadata, not data: information_schema stays
+# available so a maintenance run can discover the tables it was asked about.
+allow if {
+  is_maintenance
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName == "information_schema"
+}
+
+# Trino authorises ALTER TABLE ... EXECUTE by asking a SelectFromColumns
+# question with an empty column list, not only the procedure question above
+# (verified live against Trino 483: the denial was "Cannot select from columns
+# [] in table"). Allowing only the empty-column form keeps the property that
+# matters -- a request naming any column is a real read and stays denied, so
+# maintenance still cannot see a single value.
+maintenance_schemas := {"raw", "curated", "published"}
+
+allow if {
+  is_maintenance
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName in maintenance_schemas
+  count(object.get(table, "columns", [])) == 0
+}
+
+# Rewriting data files is what compaction is: the procedure shows up as
+# inserts and deletes against the same table.
+allow if {
+  is_maintenance
+  operation in {"InsertIntoTable", "DeleteFromTable"}
+  table.catalogName == "polaris"
+  table.schemaName in maintenance_schemas
+}
+
+# The retention floor exists so a mistyped threshold cannot delete files a
+# running query still needs. Lowering it is a deliberate, authorised act, and
+# it is scoped: maintenance may set only these two properties, only on the
+# lakehouse catalog, and nothing else gains the ability at all.
+allow if {
+  is_maintenance
+  operation == "SetCatalogSessionProperty"
+  input.action.resource.catalogSessionProperty.catalogName == "polaris"
+  input.action.resource.catalogSessionProperty.propertyName in {
+    "expire_snapshots_min_retention",
+    "remove_orphan_files_min_retention",
+  }
+}
+
+# ---------------------------------------------------------------------------
+# The ingestion control plane, read through Trino
+# ---------------------------------------------------------------------------
+# Operations dashboards read run history through the same engine and the same
+# policy as everything else, rather than through a second connection straight
+# to PostgreSQL that this policy would never see.
+#
+# Analysts and admins can read it; viewers cannot. Run history is operational
+# detail about the platform, not a published data product, and it names source
+# systems and tables a report reader has no reason to see. The catalog itself
+# is read-only at the database level (config/platform/002-roles.sql), so this
+# rule cannot be the only thing standing between a dashboard and a write.
+allow if {
+  is_analyst
+  is_select
+  table.catalogName == "platform"
+  table.schemaName in {"ingest", "information_schema"}
 }

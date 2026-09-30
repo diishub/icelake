@@ -50,8 +50,42 @@ x-superset-common: &superset-common
     PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
     PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
     PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
+    # Superset authenticates to Trino under its own name before impersonating
+    # the signed-in user.
+    SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
     <<: *psu-viewer-identities
     POLARIS_CATALOG: ${POLARIS_CATALOG:-psu}
+    # PSU Passport for the report workspace. Off unless SUPERSET_OAUTH_ENABLED
+    # is true, so a machine with no registered OIDC client keeps its local
+    # accounts. The redirect URI to register is
+    # <SUPERSET_PUBLIC_ORIGIN>/oauth-authorized/psu
+    SUPERSET_OAUTH_ENABLED: ${SUPERSET_OAUTH_ENABLED:-false}
+    SUPERSET_OAUTH_ISSUER: ${SUPERSET_OAUTH_ISSUER:-${OIDC_ISSUER:-}}
+    SUPERSET_OAUTH_CLIENT_ID: ${SUPERSET_OAUTH_CLIENT_ID:-}
+    SUPERSET_OAUTH_CLIENT_SECRET: ${SUPERSET_OAUTH_CLIENT_SECRET:-}
+    SUPERSET_OAUTH_SCOPE: ${SUPERSET_OAUTH_SCOPE:-openid profile email}
+    SUPERSET_OAUTH_USERNAME_CLAIM: ${SUPERSET_OAUTH_USERNAME_CLAIM:-preferred_username}
+    SUPERSET_OAUTH_NAME_CLAIM: ${SUPERSET_OAUTH_NAME_CLAIM:-name}
+    SUPERSET_OAUTH_EMAIL_CLAIM: ${SUPERSET_OAUTH_EMAIL_CLAIM:-email}
+    SUPERSET_OAUTH_DEFAULT_ROLE: ${SUPERSET_OAUTH_DEFAULT_ROLE:-Gamma}
+    SUPERSET_OAUTH_ROLE_SYNC: ${SUPERSET_OAUTH_ROLE_SYNC:-false}
+    SUPERSET_OAUTH_ADMIN_GROUP: ${SUPERSET_OAUTH_ADMIN_GROUP:-psu-data-hub-admin}
+    SUPERSET_OAUTH_ANALYST_GROUP: ${SUPERSET_OAUTH_ANALYST_GROUP:-psu-data-hub-analyst}
+    SUPERSET_OAUTH_VIEWER_GROUP: ${SUPERSET_OAUTH_VIEWER_GROUP:-psu-data-hub-viewer}
+    SUPERSET_COOKIE_SECURE: ${SUPERSET_COOKIE_SECURE:-true}
+    # Embedded dashboards (guest tokens) for the portal's role-specific pages.
+    SUPERSET_GUEST_TOKEN_SECRET: ${SUPERSET_GUEST_TOKEN_SECRET:?set SUPERSET_GUEST_TOKEN_SECRET in .env}
+    # Read by bootstrap_embed.py to restrict which origin may embed a dashboard.
+    AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-http://localhost:8085}
+    # Service account used only to mint guest tokens (services/auth/src/supersetEmbed.ts);
+    # granted can_grant_guest_token and nothing else by config/superset/bootstrap_embed.py.
+    SUPERSET_EMBED_SERVICE_USERNAME: ${SUPERSET_EMBED_SERVICE_USERNAME:-psu-embed}
+    SUPERSET_EMBED_SERVICE_PASSWORD: ${SUPERSET_EMBED_SERVICE_PASSWORD:?set SUPERSET_EMBED_SERVICE_PASSWORD in .env}
+    # "key=slug" pairs, comma separated -- one per dashboard bootstrap_embed.py
+    # should enable for embedding. Add to this list, rerun superset-init, and
+    # copy the printed SUPERSET_EMBED_DASHBOARDS line into .env; no new route
+    # or portal code needed for another dashboard.
+    SUPERSET_EMBED_DASHBOARD_SLUGS: ${SUPERSET_EMBED_DASHBOARD_SLUGS:-ops=psu-platform-operations}
   volumes:
     - ./config/superset:/app/pythonpath:ro
     - ./runtime/superset:/app/superset_home
@@ -85,6 +119,7 @@ services:
   rustfs:
     image: rustfs/rustfs:1.0.0-beta.8
     restart: unless-stopped
+    user: "0:0"
     environment:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
@@ -204,12 +239,61 @@ services:
       PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
     entrypoint: /bin/sh
     command: /bootstrap/render-groups.sh
     volumes:
       - ./config/trino/render-groups.sh:/bootstrap/render-groups.sh:ro
       - ./runtime/trino:/output
 
+  # Password authentication requires TLS, and a single-host development stack
+  # has no certificate authority. keytool is already in the Trino image, so a
+  # self-signed keystore costs no extra image. A real certificate is perimeter
+  # work, not this.
+  trino-tls-setup:
+    image: trinodb/trino:483
+    restart: "no"
+    environment:
+      TRINO_KEYSTORE_PASSWORD: ${TRINO_KEYSTORE_PASSWORD:?set TRINO_KEYSTORE_PASSWORD in .env}
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        mkdir -p /var/trino/data/tls
+        if [ -f /var/trino/data/tls/trino.p12 ]; then
+          echo "Trino keystore already present"
+          exit 0
+        fi
+        keytool -genkeypair -alias trino -keyalg RSA -keysize 2048 -validity 825           -storetype PKCS12 -keystore /var/trino/data/tls/trino.p12           -storepass "$$TRINO_KEYSTORE_PASSWORD" -keypass "$$TRINO_KEYSTORE_PASSWORD"           -dname "CN=trino, OU=DIIS ISD, O=Prince of Songkla University, C=TH"           -ext "SAN=DNS:trino,DNS:localhost,IP:127.0.0.1"
+        echo "Generated a self-signed keystore for Trino"
+    volumes:
+      - ./runtime/trino:/var/trino/data
+
+  # Renders the bcrypt password file Trino authenticates against. Runs on the
+  # Superset image because it is the only one in this stack that already
+  # carries a bcrypt implementation; adding an image to hash six passwords
+  # would be the worse trade. No plaintext password is written anywhere.
+  trino-password-setup:
+    build:
+      context: .
+      dockerfile: docker/superset/Dockerfile
+    restart: "no"
+    environment:
+      PSU_ADMIN_USERNAME: ${PSU_ADMIN_USERNAME}
+      PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
+      PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
+      PSU_ANALYST_PASSWORD: ${PSU_ANALYST_PASSWORD}
+      <<: *psu-viewer-identities
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
+      TRINO_MAINTENANCE_PASSWORD: ${TRINO_MAINTENANCE_PASSWORD:?set TRINO_MAINTENANCE_PASSWORD in .env}
+      SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
+    entrypoint: python
+    command: /render/render-password-file.py
+    volumes:
+      - ./config/trino/render-password-file.py:/render/render-password-file.py:ro
+      - ./runtime/trino:/output
   trino:
     image: trinodb/trino:483
     restart: unless-stopped
@@ -222,12 +306,24 @@ services:
       PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
       # Consumed via ${ENV:RUSTFS_ACCESS_KEY} in config/trino/catalog/hive.properties
       # (Trino's own secrets substitution, not shell expansion).
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      # Consumed via ${ENV:PLATFORM_READ_PASSWORD} in config/trino/catalog/platform.properties
+      PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
+      # Consumed via ${ENV:...} in config/trino/config.properties
+      TRINO_KEYSTORE_PASSWORD: ${TRINO_KEYSTORE_PASSWORD:?set TRINO_KEYSTORE_PASSWORD in .env}
+      TRINO_INTERNAL_SECRET: ${TRINO_INTERNAL_SECRET:?set TRINO_INTERNAL_SECRET in .env}
+      # Read by the healthcheck below, which now has to authenticate like any
+      # other client.
+      PSU_ADMIN_PASSWORD: ${PSU_ADMIN_PASSWORD}
     ports:
-      - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8080"
+      # HTTPS only on the host. The plain HTTP port stays inside the Compose
+      # network for the discovery URI and refuses authenticated requests.
+      - "127.0.0.1:${TRINO_HOST_PORT:-8086}:8443"
     volumes:
       - ./config/trino:/etc/trino:ro
       - ./runtime/trino:/var/trino/data
@@ -238,12 +334,19 @@ services:
         condition: service_started
       dev-identity-setup:
         condition: service_completed_successfully
+      trino-tls-setup:
+        condition: service_completed_successfully
+      trino-password-setup:
+        condition: service_completed_successfully
     healthcheck:
-      test: [CMD, curl, --fail, http://localhost:8080/v1/info]
+      # Self-signed certificate, so verification is off; the point of this
+      # check is that the server is up and the authenticator accepts a real
+      # credential, not that a local certificate chains to anything.
+      test: [CMD-SHELL, 'curl --fail --silent --insecure --user "$${PSU_ADMIN_USERNAME}:$${PSU_ADMIN_PASSWORD}" https://localhost:8443/v1/info']
       interval: 5s
       timeout: 5s
       retries: 40
-      start_period: 20s
+      start_period: 30s
 
   redis:
     image: redis:7.4.5-alpine
@@ -308,37 +411,215 @@ services:
     volumes:
       - ./runtime/qdrant:/qdrant/storage
 
+  # Creates and migrates the ingestion control-plane database. Run as a
+  # one-shot service rather than a PostgreSQL init script, because this
+  # PostgreSQL instance was initialised long ago and will never run its init
+  # scripts again. Every statement it applies is idempotent.
+  platform-migrate:
+    image: postgres:18.4-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
+      PLATFORM_READ_PASSWORD: ${PLATFORM_READ_PASSWORD:?set PLATFORM_READ_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
+      # Read by the seed migration so the registered source row matches the
+      # database the source-sim service actually serves.
+      SOURCE_SIM_DB: ${SOURCE_SIM_DB:-lakehouse_sim}
+    entrypoint: /bin/sh
+    command: /migrations/migrate.sh
+    volumes:
+      - ./config/platform:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+  # A synthetic stand-in for a PSU source warehouse. Every row in it is
+  # generated (config/source-sim/), so ingestion can be built and tested
+  # against a source with the same shape as a real one -- including columns
+  # that must never be ingested -- without a real system being involved. It is
+  # the only entry in config/guardrail/allowed-source-hosts.txt.
+  source-sim:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SOURCE_SIM_USER:-source_sim}
+      POSTGRES_PASSWORD: ${SOURCE_SIM_PASSWORD:?set SOURCE_SIM_PASSWORD in .env}
+      POSTGRES_DB: ${SOURCE_SIM_DB:-lakehouse_sim}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --data-checksums
+      # Read by config/source-sim/03-reader-role.sh to create the read-only
+      # login the pipeline uses. The pipeline never connects as the owner.
+      SOURCE_SIM_READER_PASSWORD: ${SOURCE_SIM_READER_PASSWORD:?set SOURCE_SIM_READER_PASSWORD in .env}
+    ports:
+      - 127.0.0.1:${SOURCE_SIM_HOST_PORT:-5433}:5432
+    volumes:
+      - ./runtime/source-sim:/var/lib/postgresql
+      - ./config/source-sim:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${SOURCE_SIM_USER:-source_sim} -d ${SOURCE_SIM_DB:-lakehouse_sim}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  # Refuses to let ingestion start against a database host that has not been
+  # approved for this stack (config/guardrail/). NiFi depends on it, so an
+  # unapproved source stops the container from starting rather than being
+  # caught later by whoever remembers to run a script. The credentials
+  # themselves are never passed in here -- only a flag saying that some are
+  # set, which is all the half-configured check needs.
+  source-guard:
+    image: alpine/curl:8.21.0
+    restart: "no"
+    environment:
+      PSU_SOURCE_DB_HOST: ${PSU_SOURCE_DB_HOST:-}
+      PSU_SOURCE_DB_CREDENTIALS_PRESENT: ${PSU_SOURCE_DB_PORT:+port}${PSU_SOURCE_DB_NAME:+name}${PSU_SOURCE_DB_USER:+user}${PSU_SOURCE_DB_PASSWORD:+password}
+    entrypoint: /bin/sh
+    command: /guardrail/check-source.sh
+    volumes:
+      - ./config/guardrail:/guardrail:ro
   nifi:
     image: apache/nifi:2.10.0
     restart: unless-stopped
+    user: "0:0"
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
       SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
+      NIFI_JVM_HEAP_INIT: 512m
+      NIFI_JVM_HEAP_MAX: 1024m
       NIFI_WEB_HTTPS_PORT: "8443"
       NIFI_WEB_PROXY_HOST: localhost:8443
-      # Read via System.getenv(...) from ExecuteGroovyScript processors that
-      # need a direct JDBC connection to the source DB (metadata-driven
-      # multi-table ingestion) -- ExecuteGroovyScript has no controller-
-      # service-reference property, unlike DBCPConnectionPool-backed
-      # processors, so this is the same env-var pattern already used
-      # throughout this compose file for every other credential.
-      PSU_SOURCE_DB_HOST: ${PSU_SOURCE_DB_HOST:-}
-      PSU_SOURCE_DB_PORT: ${PSU_SOURCE_DB_PORT:-}
-      PSU_SOURCE_DB_NAME: ${PSU_SOURCE_DB_NAME:-}
-      PSU_SOURCE_DB_USER: ${PSU_SOURCE_DB_USER:-}
-      PSU_SOURCE_DB_PASSWORD: ${PSU_SOURCE_DB_PASSWORD:-}
+      # Read via System.getenv(...) from the ExecuteGroovyScript processors in
+      # config/nifi/scripts. ExecuteGroovyScript has no controller-service
+      # reference property, unlike DBCPConnectionPool-backed processors, so
+      # this is the same env-var pattern used for every other credential here.
+      #
+      # No source hostname or database name appears below: those come from the
+      # ingest.source_system registry, and each source names the prefix its
+      # own credentials live under (credentials_env_prefix).
+      PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:?set PLATFORM_DB_PASSWORD in .env}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
+      SOURCE_SIM_READER_USER: ${SOURCE_SIM_READER_USER:-ingest_reader}
+      SOURCE_SIM_READER_PASSWORD: ${SOURCE_SIM_READER_PASSWORD:?set SOURCE_SIM_READER_PASSWORD in .env}
     ports:
       - 127.0.0.1:8443:8443
     volumes:
       - ./data/incoming:/data/incoming:ro
       - ./drivers:/opt/nifi/nifi-current/drivers:ro
+      # Ingestion logic lives in the repository, not pasted into the canvas.
+      - ./config/nifi/scripts:/opt/nifi/nifi-current/ingest-scripts:ro
+      # The pipeline re-checks the source host against the same lists the
+      # source-guard service uses, so a registry row alone cannot reach an
+      # unapproved host.
+      - ./config/guardrail:/guardrail:ro
       - ./runtime/nifi/database_repository:/opt/nifi/nifi-current/database_repository
       - ./runtime/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
       - ./runtime/nifi/content_repository:/opt/nifi/nifi-current/content_repository
       - ./runtime/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
       - ./runtime/nifi/state:/opt/nifi/nifi-current/state
+      # Mounted so the flow definition survives a container recreate. Populate it
+      # once from the image before first use:
+      #   docker compose cp nifi:/opt/nifi/nifi-current/conf ./runtime/nifi/conf
+      # An empty host directory here would hide the image's own configuration and
+      # NiFi would not start.
+      - ./runtime/nifi/conf:/opt/nifi/nifi-current/conf
       - ./runtime/nifi/logs:/opt/nifi/nifi-current/logs
+    depends_on:
+      source-guard:
+        condition: service_completed_successfully
+      nifi-conf-setup:
+        condition: service_completed_successfully
 
+  # Populates runtime/nifi/conf from the image on first start if nifi.properties is missing.
+  # Prevents mounting an empty host directory over the image's default configuration.
+  nifi-conf-setup:
+    image: apache/nifi:2.10.0
+    restart: "no"
+    user: "0:0"
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        if [ ! -f /target/nifi.properties ]; then
+          echo "Populating runtime/nifi/conf from image..."
+          cp -r /opt/nifi/nifi-current/conf/* /target/
+          chmod -R 777 /target
+          echo "Done populating runtime/nifi/conf"
+        fi
+    volumes:
+      - ./runtime/nifi/conf:/target
+
+
+  # Sign-in for the portal. Behind a profile because it cannot start without a
+  # registered PSU Passport client, and the rest of the stack must still come
+  # up on a machine that has none:
+  #
+  #   docker compose --profile auth up -d psu-auth
+  #
+  # nginx resolves this name at request time, so the portal serves normally
+  # whether or not this container is running; /auth/me simply fails and the
+  # portal hides the sign-in controls.
+  psu-auth:
+    build:
+      context: ./services/auth
+    profiles: [auth]
+    restart: unless-stopped
+    environment:
+      AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-http://localhost:8085}
+      AUTH_PORT: "8087"
+      AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-28800}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      # PSU Passport. Registered per deployment; the redirect URI the client is
+      # registered with must be AUTH_PUBLIC_ORIGIN + /auth/callback.
+      # Validated by the service at start-up rather than by Compose: an unset
+      # variable here would stop the whole stack, including the services that
+      # have nothing to do with sign-in.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      OIDC_USERNAME_CLAIM: ${OIDC_USERNAME_CLAIM:-preferred_username}
+      OIDC_NAME_CLAIM: ${OIDC_NAME_CLAIM:-name}
+      OIDC_EMAIL_CLAIM: ${OIDC_EMAIL_CLAIM:-email}
+      OIDC_CAMPUS_CLAIM: ${OIDC_CAMPUS_CLAIM:-}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-}
+      # PSU API gateway. Keys are read here and never reach the browser, a log
+      # line or the database.
+      API_PSU_GATEWAY: ${API_PSU_GATEWAY:-https://api-gateway.psu.ac.th:8443}
+      API_STUDENT_KEY: ${API_STUDENT_KEY:-}
+      API_STAFF_KEY: ${API_STAFF_KEY:-}
+      PSU_CAMPUS_CODES: ${PSU_CAMPUS_CODES:-}
+      PSU_API_TIMEOUT_MS: ${PSU_API_TIMEOUT_MS:-5000}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-}
+      # Email-and-password sign-in. No registration route reads these; they
+      # only govern hashing cost and the in-memory rate limiter.
+      PASSWORD_LOGIN_BCRYPT_COST: ${PASSWORD_LOGIN_BCRYPT_COST:-12}
+      PASSWORD_LOGIN_MAX_ATTEMPTS: ${PASSWORD_LOGIN_MAX_ATTEMPTS:-8}
+      PASSWORD_LOGIN_WINDOW_SECONDS: ${PASSWORD_LOGIN_WINDOW_SECONDS:-900}
+      # Embedded Superset dashboards for viewer_exec/analyst accounts (§ role
+      # pages). Optional: unset leaves /auth/embeds/* answering 503, same
+      # pattern as OIDC above.
+      SUPERSET_EMBED_ORIGIN: ${SUPERSET_EMBED_ORIGIN:-}
+      SUPERSET_EMBED_SERVICE_USERNAME: ${SUPERSET_EMBED_SERVICE_USERNAME:-psu-embed}
+      SUPERSET_EMBED_SERVICE_PASSWORD: ${SUPERSET_EMBED_SERVICE_PASSWORD:-}
+      # "key=uuid" pairs, comma separated -- copied from what
+      # config/superset/bootstrap_embed.py prints. The portal asks for a
+      # dashboard by key (GET /auth/embeds/<key>), never a Superset id.
+      SUPERSET_EMBED_DASHBOARDS: ${SUPERSET_EMBED_DASHBOARDS:-}
+      # Steward file uploads, staged in RustFS -- see 016-upload-log.sql.
+      # Optional: unset leaves /auth/uploads answering 503.
+      RUSTFS_ENDPOINT: ${RUSTFS_ENDPOINT:-http://rustfs:9000}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET:-psu-lakehouse}
+      TRINO_ENDPOINT: ${TRINO_ENDPOINT:-https://trino:8443}
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
   psu-portal:
     image: nginx:1.29.1-alpine
     restart: unless-stopped

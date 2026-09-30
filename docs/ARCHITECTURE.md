@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     CSV[CSV files] --> NIFI[Apache NiFi]
-    DB[(Postgres / MySQL / Oracle)] --> NIFI
+    SIM[(source-sim: synthetic Postgres)] --> NIFI
     NIFI --> ICE[Apache Iceberg]
     ICE --- POL[Apache Polaris]
     ICE --- S3[RustFS object storage]
@@ -32,10 +32,15 @@ flowchart LR
 - PSU Data Hub is a thin, Thai-first guidance layer. It does not authenticate a
   user or grant data access; it keeps ordinary users out of operator consoles
   and sends them to the appropriate authenticated Superset route.
+- Trino authenticates clients with a local password file over TLS. It used to
+  accept whatever username a client asserted, which is why the stack could
+  not be pointed at real data; the username is now proven, not claimed.
+  Authorization is still OPA, and PSU SSO replaces the password file rather
+  than extending it.
 - Superset owns three shared development personas today. NiFi has a separate
-  single-user login. Trino usernames are asserted authorization labels, not
-  authenticated accounts. PSU OAuth2 SSO is deliberately not part of this
-  development phase.
+  single-user login. Trino identities authenticate with a local password file
+  over TLS and are then resolved to groups; the username is proven rather than
+  claimed. PSU OAuth2 SSO is still deliberately not part of this phase.
 - NiFi is the visual ingestion workbench. It replaces Airbyte in this Compose
   deployment because current Airbyte Core is deployed through Kubernetes and
   `abctl`, not a supported Docker Compose topology.
@@ -46,6 +51,31 @@ flowchart LR
   (`hive.raw_staging`, a second file-metastore Trino catalog,
   [`config/trino/catalog/hive.properties`](../config/trino/catalog/hive.properties))
   to bridge into `polaris.raw`.
+- Which database hosts may be used as an ingestion source at all is a
+  committed, reviewable list (`config/guardrail/`), enforced by a `source-guard`
+  service that `nifi` depends on. Production systems holding real personal data
+  are on a denylist that wins over the allowlist, so reaching one would take two
+  visible edits plus a change to this stack's missing controls. See
+  [`SOURCE_GUARDRAIL_TH.md`](SOURCE_GUARDRAIL_TH.md).
+- What gets ingested is decided by the `platform` database (schema `ingest`),
+  not by the NiFi canvas: approved sources, the tables to load, the mirrored
+  column classification, incremental watermarks, and one run record per
+  attempt. The pipeline connects to it as `platform_app`, which can record
+  runs but cannot register a source or enable a table for itself.
+- The ingestion source used for development is `source-sim`, a synthetic
+  Postgres whose rows are all generated (`config/source-sim/`). It carries its
+  own column classification registry so the pipeline's PDPA filtering is
+  exercised against realistic metadata rather than a real system.
+- Table maintenance runs as its own Trino identity (`psu_maintenance`), which
+  can compact, expire snapshots and delete orphaned files but cannot read a
+  column of the data it maintains. That separation matters here because
+  dropping an Iceberg table does not delete its files: orphan removal is what
+  completes a deletion request, so the identity that performs it is the one
+  with the most destructive reach in the stack.
+- The control plane is exposed back through Trino as a read-only `platform`
+  catalog, so the operations dashboard reads run history through the same
+  engine and the same policy as every other query rather than through a second
+  connection to PostgreSQL that OPA would never see.
 - Qdrant is a rebuildable vector index, never the only copy of document text.
 
 ## Access-control flow
