@@ -53,15 +53,27 @@ echo "starting ${GROUP_NAME}"
 jq -n --arg id "${group_id}" '{id:$id, state:"RUNNING"}' \
   | api PUT "/flow/process-groups/${group_id}" -d @- | jq -r .state
 
+# Wait for Trigger to actually fire (produce at least one flowfile out)
+echo "waiting for Trigger to fire..."
+for _ in $(seq 1 60); do
+  out="$(api GET "/processors/${trigger_id}" | jq -r '.status.aggregateSnapshot.flowFilesOut // 0')"
+  if [ "${out}" -gt 0 ]; then
+    echo "trigger fired (${out} flowfile(s) generated)"
+    break
+  fi
+  sleep 1
+done
+
 # One trigger firing is enough; stop it so the rest of the flow drains once.
-sleep 3
 revision="$(api GET "/processors/${trigger_id}" | jq -c .revision)"
 jq -n --argjson rev "${revision}" --arg id "${trigger_id}" \
   '{revision:$rev, state:"STOPPED", disconnectedNodeAcknowledged:false}' \
   | api PUT "/processors/${trigger_id}/run-status" -d @- >/dev/null
 echo "trigger stopped after one firing"
 
-waited=0
+# Allow downstream processors a moment to start processing
+sleep 5
+waited=5
 while [ "${waited}" -lt 300 ]; do
   queued="$(api GET "/flow/process-groups/${group_id}/status?recursive=true" \
     | jq -r '.processGroupStatus.aggregateSnapshot | "\(.flowFilesQueued) \(.activeThreadCount)"')"

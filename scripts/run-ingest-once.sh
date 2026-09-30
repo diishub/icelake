@@ -19,3 +19,12 @@ echo "=== ingest runs from the last 10 minutes ==="
 docker compose exec -T postgres /bin/sh -ec \
   'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" --dbname platform --no-psqlrc -f -' \
   < scripts/sql/ingest-run-report.sql
+
+runs_count="$(docker compose exec -T postgres /bin/sh -ec \
+  'PGPASSWORD="${POSTGRES_PASSWORD}" psql --host 127.0.0.1 --username "${POSTGRES_USER}" --dbname platform -t -A -c "SELECT count(*) FROM ingest.ingest_run WHERE started_at > now() - interval '\''10 minutes'\'';"' 2>/dev/null || echo "0")"
+
+if [ "${runs_count}" -eq 0 ]; then
+  echo "ERROR: No ingest runs were recorded in ingest.ingest_run!" >&2
+  docker compose exec -T nifi tail -n 200 /opt/nifi/nifi-current/logs/nifi-app.log >&2 || true
+  exit 1
+fi

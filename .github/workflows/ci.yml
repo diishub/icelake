@@ -108,7 +108,7 @@ jobs:
 
       - name: Prepare runtime directories
         run: |
-          mkdir -p runtime/rustfs runtime/postgres runtime/redis runtime/qdrant runtime/trino runtime/superset runtime/source-sim
+          mkdir -p runtime/rustfs runtime/postgres runtime/redis runtime/qdrant runtime/trino/hive-metastore runtime/superset runtime/source-sim
           mkdir -p runtime/nifi/database_repository runtime/nifi/flowfile_repository runtime/nifi/content_repository runtime/nifi/provenance_repository runtime/nifi/state runtime/nifi/conf runtime/nifi/logs
           chmod -R 777 runtime
 

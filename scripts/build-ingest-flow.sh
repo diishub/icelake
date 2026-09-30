@@ -17,4 +17,10 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
+# Ensure Trino Hive staging schema exists so load_into_iceberg can stage CSVs
+. scripts/lib/trino.sh
+admin_user="$(grep '^PSU_ADMIN_USERNAME=' .env | cut -d= -f2)"
+admin_password="$(trino_password_for PSU_ADMIN_PASSWORD)"
+trino_sql "${admin_user}" "${admin_password}" "CREATE SCHEMA IF NOT EXISTS hive.raw_staging" || true
+
 docker compose exec -T nifi /bin/sh -s < scripts/nifi/build-ingest-flow.container.sh
