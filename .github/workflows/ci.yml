@@ -75,12 +75,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Use the CI environment fixture
+        run: cp .env.ci .env
+
       - name: Set up swap space
         run: |
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo "Memory and swap before:"
+          free -h
+          SWAP_FILE=$(swapon --noheadings --show=NAME | tail -n 1 || true)
+          if [ -n "${SWAP_FILE}" ] && [ -f "${SWAP_FILE}" ]; then
+            echo "Removing existing swap file: ${SWAP_FILE}"
+            sudo swapoff "${SWAP_FILE}" || true
+            sudo rm -f "${SWAP_FILE}" || true
+          fi
+          echo "Allocating 4G swap file..."
+          if sudo fallocate -l 4G /swapfile 2>/dev/null; then
+            echo "fallocate succeeded"
+          else
+            echo "fallocate failed, falling back to dd"
+            sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress || true
+          fi
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile || true
+            sudo swapon /swapfile || echo "swapon failed, continuing without swap"
+          fi
+          echo "Memory and swap after:"
           free -h
 
       - name: Make scripts executable
@@ -91,9 +111,6 @@ jobs:
           mkdir -p runtime/rustfs runtime/postgres runtime/redis runtime/qdrant runtime/trino runtime/superset runtime/source-sim
           mkdir -p runtime/nifi/database_repository runtime/nifi/flowfile_repository runtime/nifi/content_repository runtime/nifi/provenance_repository runtime/nifi/state runtime/nifi/conf runtime/nifi/logs
           chmod -R 777 runtime
-
-      - name: Use the CI environment fixture
-        run: cp .env.ci .env
 
       - name: Build the auth service image
         run: docker compose --profile auth build psu-auth
@@ -219,8 +236,12 @@ jobs:
 
       - name: Dump logs on failure
         if: failure()
-        run: docker compose logs --tail 200
+        run: |
+          [ -f .env ] || cp .env.ci .env 2>/dev/null || true
+          docker compose logs --tail 200 || true
 
       - name: Tear down
         if: always()
-        run: docker compose --profile auth down -v
+        run: |
+          [ -f .env ] || cp .env.ci .env 2>/dev/null || true
+          docker compose --profile auth down -v || true
