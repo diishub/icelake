@@ -81,6 +81,7 @@ jobs:
       - name: Prepare runtime directories
         run: |
           mkdir -p runtime/rustfs runtime/postgres runtime/redis runtime/qdrant runtime/trino runtime/superset runtime/source-sim
+          mkdir -p runtime/nifi/database_repository runtime/nifi/flowfile_repository runtime/nifi/content_repository runtime/nifi/provenance_repository runtime/nifi/state runtime/nifi/conf runtime/nifi/logs
           chmod -R 777 runtime
 
       - name: Use the CI environment fixture
@@ -146,19 +147,16 @@ jobs:
       - name: Wait for the NiFi API
         run: |
           set -eu
-          # Read from .env rather than hardcoded here, so this step tracks
-          # whatever .env.ci actually sets instead of a second copy of it
-          # that could quietly drift out of sync.
-          nifi_user="$(grep '^NIFI_USERNAME=' .env | cut -d= -f2-)"
-          nifi_password="$(grep '^NIFI_PASSWORD=' .env | cut -d= -f2-)"
           for _ in $(seq 1 40); do
-            nifi_ip="$(docker compose exec -T nifi hostname -i 2>/dev/null || echo "")"
-            nifi_ip="${nifi_ip%% *}"
-            if [ -n "${nifi_ip}" ] && docker compose exec -T nifi curl -sf --insecure \
-                 --resolve "localhost:8443:${nifi_ip}" -X POST \
-                 https://localhost:8443/nifi-api/access/token \
-                 --data-urlencode "username=${nifi_user}" \
-                 --data-urlencode "password=${nifi_password}" >/dev/null 2>&1; then
+            if docker compose exec -T nifi /bin/sh -c '
+                 nifi_ip="$(hostname -i 2>/dev/null || echo "")"
+                 nifi_ip="${nifi_ip%% *}"
+                 [ -n "${nifi_ip}" ] && curl -sf --insecure \
+                   --resolve "localhost:8443:${nifi_ip}" -X POST \
+                   https://localhost:8443/nifi-api/access/token \
+                   --data-urlencode "username=${SINGLE_USER_CREDENTIALS_USERNAME}" \
+                   --data-urlencode "password=${SINGLE_USER_CREDENTIALS_PASSWORD}" >/dev/null 2>&1
+               '; then
               echo "ready: nifi"
               exit 0
             fi
