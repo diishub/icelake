@@ -151,8 +151,11 @@ jobs:
           # that could quietly drift out of sync.
           nifi_user="$(grep '^NIFI_USERNAME=' .env | cut -d= -f2-)"
           nifi_password="$(grep '^NIFI_PASSWORD=' .env | cut -d= -f2-)"
-          for _ in $(seq 1 30); do
-            if docker compose exec -T nifi curl -sf --insecure -X POST \
+          for _ in $(seq 1 40); do
+            nifi_ip="$(docker compose exec -T nifi hostname -i 2>/dev/null || echo "")"
+            nifi_ip="${nifi_ip%% *}"
+            if [ -n "${nifi_ip}" ] && docker compose exec -T nifi curl -sf --insecure \
+                 --resolve "localhost:8443:${nifi_ip}" -X POST \
                  https://localhost:8443/nifi-api/access/token \
                  --data-urlencode "username=${nifi_user}" \
                  --data-urlencode "password=${nifi_password}" >/dev/null 2>&1; then
@@ -163,6 +166,7 @@ jobs:
           done
           echo "TIMED OUT waiting for: nifi" >&2
           docker compose logs --tail 100 nifi >&2 || true
+          docker compose exec -T nifi tail -n 100 /opt/nifi/nifi-current/logs/nifi-app.log >&2 || true
           exit 1
 
       # test-ingest-pipeline.sh and test-maintenance.sh both read tables the
