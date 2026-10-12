@@ -35,36 +35,6 @@
   };
 
   const config = window.PSU_PORTAL_CONFIG || fallbackConfig;
-  const localHostnames = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-  const isLocalHost = localHostnames.has(window.location.hostname) || window.location.hostname.endsWith(".localhost");
-
-  /**
-   * Roles carry keys, not sentences: the plan is rendered through the
-   * dictionary so switching language re-renders it with everything else,
-   * rather than leaving one panel in the language it was first drawn in.
-   */
-  const roles = {
-    // "reports" used to build a direct cross-port Superset URL here, which
-    // sent a viewer_exec/analyst account straight past the portal entirely.
-    // /reports.html is the dedicated, tier-gated page that embeds a live
-    // Superset dashboard (portal/reports.js) -- every "go to my reports"
-    // affordance on this page (this button, the homepage teaser card, each
-    // published catalogue item) now points there, instead of each building
-    // its own direct Superset link. SQL Lab has no in-portal equivalent, so
-    // "analyst" still goes straight to Superset for that.
-    viewer: { action: "anchor", target: "/reports.html" },
-    analyst: { action: "service", target: "analytics" },
-    steward: { action: "anchor", target: "#request-data" },
-    operator: {
-      action: "anchor",
-      target: isLocalHost ? "#operator-tools" : "#help",
-      actionKey: isLocalHost ? "role.operator.actionLocal" : "role.operator.actionRemote",
-      footnoteKey: isLocalHost ? "role.operator.footnoteLocal" : "role.operator.footnoteRemote"
-    }
-  };
-
-  let activeRole = "viewer";
-
   /**
    * Built when the button is pressed, not at load, so it is copied in the
    * language the reader is actually looking at.
@@ -82,36 +52,6 @@
     t("form.note")
   ].join("\n");
 
-  function buildServiceUrl(serviceName) {
-    const service = config.services && config.services[serviceName];
-    if (!service) {
-      return "#help";
-    }
-
-    const url = new URL(window.location.href);
-    url.protocol = service.protocol;
-    url.port = service.port;
-    url.pathname = service.path;
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  }
-
-  function configureServiceLinks() {
-    document.querySelectorAll("[data-service-link]").forEach((link) => {
-      const serviceName = link.dataset.serviceLink;
-      const isOperatorService = !["reports", "analytics"].includes(serviceName);
-
-      if (isOperatorService && !isLocalHost) {
-        link.removeAttribute("href");
-        link.setAttribute("aria-disabled", "true");
-        return;
-      }
-
-      link.href = buildServiceUrl(serviceName);
-    });
-  }
-
   function updatePortalCopy() {
     document.querySelectorAll("[data-pilot-label]").forEach((node) => {
       node.textContent = localized(config.pilotLabel);
@@ -120,71 +60,6 @@
     const supportMessage = document.querySelector("[data-support-message]");
     if (supportMessage) {
       supportMessage.textContent = localized(config.supportMessage) || t("config.support");
-    }
-
-    const stateBadge = document.querySelector("#published-state-badge");
-    const stateMessage = document.querySelector("#published-state-message");
-    if (stateBadge && stateMessage) {
-      stateMessage.textContent =
-        localized(config.publishedStateMessage) || t("config.publishedState");
-      stateBadge.textContent = t(config.publishedReportsReady ? "reports.stateReady" : "reports.stateEmpty");
-      stateBadge.classList.toggle("is-ready", Boolean(config.publishedReportsReady));
-      stateBadge.classList.toggle("is-empty", !config.publishedReportsReady);
-    }
-  }
-
-  function applyRole(roleName, shouldPersist = true) {
-    const name = roles[roleName] ? roleName : "viewer";
-    const role = roles[name];
-    activeRole = name;
-
-    document.querySelectorAll("[data-role]").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.role === name));
-    });
-
-    document.querySelector("#role-plan-label").textContent = t(`role.${name}.label`);
-    document.querySelector("#role-plan-title").textContent = t(`role.${name}.title`);
-    document.querySelector("#role-plan-description").textContent = t(`role.${name}.description`);
-    document.querySelector("#role-plan-footnote").textContent =
-      t(role.footnoteKey || `role.${name}.footnote`);
-
-    const steps = document.querySelector("#role-plan-steps");
-    steps.replaceChildren(...[1, 2, 3].map((index) => {
-      const item = document.createElement("li");
-      item.textContent = t(`role.${name}.step${index}`);
-      return item;
-    }));
-
-    const action = document.querySelector("#role-plan-action");
-    action.textContent = t(role.actionKey || `role.${name}.action`);
-    action.href = role.action === "service" ? buildServiceUrl(role.target) : role.target;
-
-    if (shouldPersist) {
-      try {
-        window.localStorage.setItem("psu-data-hub-role", roleName);
-      } catch (_error) {
-        // The role choice is only a convenience; the page works without storage.
-      }
-    }
-  }
-
-  function restoreRole() {
-    let savedRole = "viewer";
-    try {
-      const candidate = window.localStorage.getItem("psu-data-hub-role");
-      if (candidate && roles[candidate]) {
-        savedRole = candidate;
-      }
-    } catch (_error) {
-      // Private browsing can disable storage. Default guidance remains usable.
-    }
-    applyRole(savedRole, false);
-  }
-
-  function showOperatorToolsOnHost() {
-    const operatorTools = document.querySelector("#operator-tools");
-    if (operatorTools && isLocalHost) {
-      operatorTools.hidden = false;
     }
   }
 
@@ -244,7 +119,7 @@
     status.classList.remove("is-checking", "is-ready", "is-down");
     status.classList.add(state);
     status.querySelector("strong").textContent = title;
-    status.querySelector("small").textContent = detail;
+    status.title = detail;
   }
 
   async function checkReportHealth() {
@@ -268,42 +143,6 @@
     }
   }
 
-
-  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-  // Entrance animation. The attribute is added here rather than in the markup
-  // so that a parse error or a blocked script can never leave the page
-  // permanently invisible: with no JavaScript the sections simply stand still.
-  function revealOnScroll() {
-    const targets = document.querySelectorAll(
-      ".hero-copy, .first-visit-card, .plain-language-strip, .section-heading, " +
-      ".stat-grid, .domain-grid, .catalog-toolbar, " +
-      ".role-picker, .role-plan, .real-report-card, .demo-report, " +
-      ".governance-copy, .governance-rules, .request-copy, .request-template, .faq-list, .support-callout, .operator-grid"
-    );
-
-    if (prefersReducedMotion.matches || !("IntersectionObserver" in window)) {
-      return;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry, index) => {
-        if (!entry.isIntersecting) {
-          return;
-        }
-        // Staggering siblings by 80ms reads as one movement rather than as
-        // several elements arriving at once.
-        entry.target.style.transitionDelay = `${Math.min(index, 4) * 80}ms`;
-        entry.target.dataset.reveal = "shown";
-        observer.unobserve(entry.target);
-      });
-    }, { threshold: 0.15, rootMargin: "0px 0px -60px 0px" });
-
-    targets.forEach((target) => {
-      target.dataset.reveal = "";
-      observer.observe(target);
-    });
-  }
 
   function configureBackToTop() {
     const button = document.querySelector(".to-top");
@@ -452,10 +291,15 @@
 
     const facts = element("dl", "catalog-facts");
     const addFact = (term, value) => {
-      facts.append(element("dt", null, term));
-      facts.append(element("dd", null, value));
+      const row = element("div");
+      row.append(element("dt", null, term), element("dd", null, value));
+      facts.append(row);
     };
 
+    const domain = catalogState.domains.find((d) => d.key === dataset.domain);
+    if (domain) {
+      addFact(t("catalog.domain"), domainLabel(domain));
+    }
     addFact(t("catalog.owner"), dataset.owner);
     addFact(t("catalog.updated"), formatAge(dataset.last_success_at));
 
@@ -480,7 +324,6 @@
     // data-requires-auth rewrite (which would only know how to send an
     // anonymous visitor back to *this* page, not on to /reports.html).
     action.href = availability === "published" ? "/reports.html" : "#request-data";
-    action.append(element("span", null, "\u2192"));
     item.append(action);
 
     return item;
@@ -518,32 +361,33 @@
     renderCatalogAuthActions();
   }
 
+  const domainLabel = (domain) =>
+    (i18n.language === "en" ? domain.label_en : domain.label) || domain.label;
+
   function renderDomains() {
     const grid = document.querySelector("#domain-grid");
     if (!grid) {
       return;
     }
 
-    grid.replaceChildren(...catalogState.domains.map((domain) => {
+    const option = (key, label, count) => {
       const button = element("button", "domain-card");
       button.type = "button";
-      button.dataset.domain = domain.key;
-      button.setAttribute("aria-pressed", String(catalogState.domain === domain.key));
-      button.append(element("strong", null,
-        (i18n.language === "en" ? domain.label_en : domain.label) || domain.label));
-      button.append(element("span", "domain-count",
-        t("domains.datasetCount", { count: domain.dataset_count })));
-      button.append(element("small", null,
-        t("domains.publishedCount", { count: domain.published_count })));
-      button.append(element("span", "domain-arrow", "\u2192"));
+      button.setAttribute("aria-pressed", String(catalogState.domain === key));
+      button.append(element("strong", null, label), element("span", "domain-count", count));
       button.addEventListener("click", () => {
-        catalogState.domain = catalogState.domain === domain.key ? null : domain.key;
+        catalogState.domain = key;
         renderDomains();
         renderCatalogList();
-        document.querySelector("#catalog").scrollIntoView({ block: "start" });
       });
       return button;
-    }));
+    };
+
+    grid.replaceChildren(
+      option(null, t("domains.all"), catalogState.datasets.length),
+      ...catalogState.domains.map((domain) =>
+        option(domain.key, domainLabel(domain), domain.dataset_count))
+    );
   }
 
   function renderCatalogStats(catalog) {
@@ -757,9 +601,13 @@
         name.textContent = authState.user.displayName || authState.user.username;
       }
       if (role) {
-        const type = t(`userType.${authState.user.userType || "unknown"}`);
-        const unit = authState.user.facultyNameTh || authState.user.campusNameTh;
-        role.textContent = unit ? `${type} · ${unit}` : type;
+        // The granted tier, as the workspace header shows it; a password
+        // account has no directory record, so its user type is always unknown.
+        const tiers = ["none", "viewer", "viewer_exec", "analyst", "steward", "developer"];
+        const tier = tiers.includes(authState.user.accessTier) ? authState.user.accessTier : "none";
+        const label = t(`tier.${tier}`);
+        const unit = authState.user.facultyNameTh || authState.user.orgUnit || authState.user.campusNameTh;
+        role.textContent = unit ? `${label} · ${unit}` : label;
       }
     }
 
@@ -776,6 +624,13 @@
         authState.authenticated &&
         authState.user &&
         (authState.user.accessTier === "analyst" || authState.user.accessTier === "developer")
+      );
+    }
+
+    const adminLink = document.querySelector("#account-admin-link");
+    if (adminLink) {
+      adminLink.hidden = !(
+        authState.authenticated && authState.user && authState.user.accessTier === "developer"
       );
     }
 
@@ -865,7 +720,6 @@
   // switch.
 
   function redrawTranslatedContent() {
-    applyRole(activeRole, false);
     updatePortalCopy();
     renderAccount();
     if (catalogState.document) {
@@ -884,17 +738,9 @@
     i18n.onChange(() => redrawTranslatedContent());
   }
 
-  document.querySelectorAll("[data-role]").forEach((button) => {
-    button.addEventListener("click", () => applyRole(button.dataset.role));
-  });
-
-  configureServiceLinks();
   updatePortalCopy();
-  showOperatorToolsOnHost();
-  restoreRole();
   configureRequestCopy();
   checkReportHealth();
-  revealOnScroll();
   configureBackToTop();
   configureCatalogSearch();
   loadCatalog();

@@ -776,7 +776,9 @@
       });
     }
 
-    // i18n change listener
+    const langSwitch = document.querySelector("#lang-switch");
+    if (langSwitch) langSwitch.addEventListener("click", () => i18n.toggle());
+
     i18n.onChange(() => {
       renderList();
       if (activeUpload) populateModal();

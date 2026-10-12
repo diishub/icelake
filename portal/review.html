@@ -3,98 +3,101 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="ศูนย์ตรวจสอบและอนุมัติชุดข้อมูลสำหรับนักวิเคราะห์ข้อมูล · PSU Data Hub">
-    <title>ตรวจสอบและอนุมัติข้อมูล · PSU Data Hub</title>
+    <meta name="description" content="ตรวจสอบและอนุมัติข้อมูลนำเข้า · PSU Data Hub">
+    <title>ตรวจสอบข้อมูลนำเข้า · PSU Data Hub</title>
     <link rel="preload" href="/fonts/sarabun-thai-400.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/fonts/sarabun-latin-400.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/fonts/sarabun-thai-800.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-thai-700.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/styles.css">
     <script src="/config.js" defer></script>
     <script src="/i18n/th.js" defer></script>
     <script src="/i18n/en.js" defer></script>
     <script src="/i18n/index.js" defer></script>
+    <script src="/workspace.js" defer></script>
     <script src="/review.js" defer></script>
   </head>
-  <body class="login-body review-body">
+  <body class="app-body">
     <a class="skip-link" href="#review-main" data-i18n="skip">ข้ามไปยังเนื้อหาหลัก</a>
 
-    <header class="login-header">
-      <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
-        <span class="brand-mark" aria-hidden="true">PSU</span>
-        <span class="brand-copy">
-          <strong>PSU Data Hub</strong>
-        </span>
-      </a>
-      <div class="header-actions">
-        <button class="lang-switch" type="button" id="lang-switch"
-                aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel">
-          <span aria-hidden="true">&#127760;</span><span data-i18n="lang.switchTo">English</span>
-        </button>
+    <div class="gov-bar">
+      <div class="container gov-bar-inner">
+        <span data-i18n="gov.university">มหาวิทยาลัยสงขลานครินทร์ · Prince of Songkla University</span>
+        <div class="gov-bar-tools">
+          <button class="lang-switch" type="button" id="lang-switch"
+                  aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel"
+                  data-i18n="lang.switchTo">English</button>
+        </div>
+      </div>
+    </div>
+
+    <header class="site-header">
+      <div class="container site-header-inner">
+        <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
+          <img class="brand-logo" src="/assets/psu-logo.png" alt="" width="68" height="36">
+          <span class="brand-rule" aria-hidden="true"></span>
+          <span class="brand-copy">
+            <strong>PSU Data Hub</strong>
+            <span data-i18n="ws.subtitle">พื้นที่ปฏิบัติงานข้อมูล</span>
+          </span>
+        </a>
+        <div class="account-card" id="ws-account" hidden>
+          <span class="account-copy">
+            <strong id="ws-account-name"></strong>
+            <small id="ws-account-role"></small>
+          </span>
+          <button class="account-signout" type="button" id="ws-signout" data-i18n="account.signOut">ออกจากระบบ</button>
+        </div>
+      </div>
+      <div class="container">
+        <nav class="workspace-nav" aria-label="เมนูพื้นที่ปฏิบัติงาน" data-i18n-attr="aria-label:ws.label">
+          <a href="/" data-i18n="ws.home">หน้าแรก</a>
+          <a href="/upload.html" data-ws-link="upload" hidden data-i18n="ws.upload">ส่งข้อมูลของหน่วยงาน</a>
+          <a href="/review.html" data-ws-link="review" aria-current="page" data-i18n="ws.review">ตรวจสอบข้อมูลนำเข้า</a>
+          <a href="/publish.html" data-ws-link="publish" hidden data-i18n="ws.publish">เผยแพร่ชุดข้อมูล</a>
+          <a href="/reports.html" data-ws-link="reports" hidden data-i18n="ws.reports">รายงาน</a>
+          <a href="/admin.html" data-ws-link="admin" hidden data-i18n="ws.admin">ผู้ดูแลระบบ</a>
+        </nav>
       </div>
     </header>
 
-    <main id="review-main" class="login-main review-main">
-      <div class="login-card review-card">
-        <p class="login-status" id="review-status" role="status" aria-live="polite" hidden></p>
+    <main id="review-main" class="container page">
+      <p class="login-status" id="review-status" role="status" aria-live="polite" hidden></p>
 
-        <div id="review-content-area" hidden>
-          <div class="review-header-flex">
-            <div>
-              <h1 class="login-heading" data-i18n="review.heading">ศูนย์ตรวจสอบและอนุมัติข้อมูล</h1>
-              <p class="login-subheading" data-i18n="review.subheading">ตรวจสอบโครงสร้างข้อมูล จำแนกชั้นความลับ และอนุมัตินำเข้าสู่ Iceberg Raw Zone</p>
-            </div>
-            <button class="button button-ghost review-refresh-btn" type="button" id="review-refresh-btn" data-i18n="review.refresh">
-              รีเฟรชข้อมูล
-            </button>
+      <div id="review-content-area" hidden>
+        <div class="page-head">
+          <div>
+            <p class="breadcrumb"><span data-i18n="ws.breadcrumb">พื้นที่ปฏิบัติงาน</span> / <span data-i18n="ws.review">ตรวจสอบข้อมูลนำเข้า</span></p>
+            <h1 class="page-title" data-i18n="review.heading">ตรวจสอบข้อมูลนำเข้า</h1>
+            <p class="page-lead" data-i18n="review.subheading">ตรวจสอบโครงสร้างข้อมูล จัดชั้นความลับของคอลัมน์ และอนุมัติการนำเข้าสู่ชั้น raw ของคลังข้อมูล</p>
           </div>
-
-          <!-- Stats Summary Bar -->
-          <div class="review-stats-grid">
-            <div class="review-stat-card">
-              <span class="review-stat-label" data-i18n="review.tabPending">รอตรวจสอบ</span>
-              <strong class="review-stat-value text-caution" id="stat-pending">0</strong>
-            </div>
-            <div class="review-stat-card">
-              <span class="review-stat-label" data-i18n="review.tabRegistered">อนุมัติแล้ว</span>
-              <strong class="review-stat-value text-positive" id="stat-registered">0</strong>
-            </div>
-            <div class="review-stat-card">
-              <span class="review-stat-label" data-i18n="review.tabRejected">ปฏิเสธ</span>
-              <strong class="review-stat-value text-critical" id="stat-rejected">0</strong>
-            </div>
-            <div class="review-stat-card">
-              <span class="review-stat-label" data-i18n="review.tabAll">ทั้งหมด</span>
-              <strong class="review-stat-value" id="stat-total">0</strong>
-            </div>
+          <div class="page-actions">
+            <button class="button button-ghost" type="button" id="review-refresh-btn" data-i18n="review.refresh">ปรับปรุงข้อมูล</button>
           </div>
+        </div>
 
-          <!-- Filter Tabs -->
-          <div class="review-tabs" role="tablist">
-            <button class="review-tab is-active" type="button" role="tab" data-filter="pending" id="tab-pending">
-              <span data-i18n="review.tabPending">รอตรวจสอบ</span>
-              <span class="review-badge-counter" id="badge-pending">0</span>
-            </button>
-            <button class="review-tab" type="button" role="tab" data-filter="all" id="tab-all" data-i18n="review.tabAll">
-              ทั้งหมด
-            </button>
-            <button class="review-tab" type="button" role="tab" data-filter="registered" id="tab-registered" data-i18n="review.tabRegistered">
-              อนุมัติแล้ว
-            </button>
-            <button class="review-tab" type="button" role="tab" data-filter="rejected" id="tab-rejected" data-i18n="review.tabRejected">
-              ปฏิเสธ
-            </button>
-          </div>
+        <div class="review-stats-grid">
+          <div class="review-stat-card"><span class="review-stat-label" data-i18n="review.tabPending">รอตรวจสอบ</span><strong class="review-stat-value text-caution" id="stat-pending">0</strong></div>
+          <div class="review-stat-card"><span class="review-stat-label" data-i18n="review.tabRegistered">นำเข้าแล้ว</span><strong class="review-stat-value text-positive" id="stat-registered">0</strong></div>
+          <div class="review-stat-card"><span class="review-stat-label" data-i18n="review.tabRejected">ไม่อนุมัติ</span><strong class="review-stat-value text-critical" id="stat-rejected">0</strong></div>
+          <div class="review-stat-card"><span class="review-stat-label" data-i18n="review.tabAll">ทั้งหมด</span><strong class="review-stat-value" id="stat-total">0</strong></div>
+        </div>
 
-          <!-- Review Items Table Container -->
-          <div class="review-table-wrapper" role="region" aria-live="polite">
-            <div id="review-list-container" class="review-list-container">
-              <p class="review-empty-state" data-i18n="review.loading">กำลังโหลดข้อมูล…</p>
-            </div>
+        <div class="review-tabs" role="tablist">
+          <button class="review-tab is-active" type="button" role="tab" data-filter="pending" id="tab-pending">
+            <span data-i18n="review.tabPending">รอตรวจสอบ</span>
+            <span class="review-badge-counter" id="badge-pending">0</span>
+          </button>
+          <button class="review-tab" type="button" role="tab" data-filter="all" id="tab-all" data-i18n="review.tabAll">ทั้งหมด</button>
+          <button class="review-tab" type="button" role="tab" data-filter="registered" id="tab-registered" data-i18n="review.tabRegistered">นำเข้าแล้ว</button>
+          <button class="review-tab" type="button" role="tab" data-filter="rejected" id="tab-rejected" data-i18n="review.tabRejected">ไม่อนุมัติ</button>
+        </div>
+
+        <div class="review-table-wrapper" role="region" aria-live="polite">
+          <div id="review-list-container" class="review-list-container">
+            <p class="review-empty-state" data-i18n="review.loading">กำลังโหลดข้อมูล…</p>
           </div>
         </div>
       </div>
-
-      <a class="login-back" href="/" data-i18n="login.backHome">กลับหน้าแรก</a>
     </main>
 
     <!-- Detailed Review Modal -->
@@ -171,7 +174,7 @@
                        data-i18n-attr="placeholder:review.tableSuffixPlaceholder" required>
               </div>
               <small class="target-table-hint">
-                <span data-i18n="review.tablePrefixLabel">ชื่อตารางปลายทางในคลังข้อมูล:</span> <code id="target-table-full-preview">polaris.raw.steward_...</code> (ใช้อักษรภาษาอังกฤษตัวพิมพ์เล็ก ตัวเลข และ _ เท่านั้น)
+                <span data-i18n="review.tablePrefixLabel">ชื่อตารางปลายทางในคลังข้อมูล:</span> <code id="target-table-full-preview">polaris.raw.steward_...</code> <span data-i18n="review.tableSuffixRule">(ใช้อักษรภาษาอังกฤษตัวพิมพ์เล็ก ตัวเลข และ _ เท่านั้น)</span>
               </small>
             </div>
           </section>
@@ -193,7 +196,7 @@
             </div>
 
             <div class="guardrail-alert" id="guardrail-alert" hidden data-i18n="review.guardrailWarning">
-              ⚠️ ต้องเลือกอย่างน้อย 1 คอลัมน์เป็น Public จึงจะสร้างตารางได้
+              ต้องเลือกอย่างน้อย 1 คอลัมน์เป็น Public จึงจะสร้างตารางได้
             </div>
 
             <div class="columns-table-wrapper">
@@ -204,7 +207,7 @@
                     <th data-i18n="review.columnOriginalName">ชื่อดั้งเดิม</th>
                     <th data-i18n="review.columnType">ประเภทข้อมูล</th>
                     <th data-i18n="review.columnClassification">ชั้นความลับ</th>
-                    <th>ตัวอย่างค่า</th>
+                    <th data-i18n="review.columnSample">ตัวอย่างค่า</th>
                   </tr>
                 </thead>
                 <tbody id="columns-tbody"></tbody>
@@ -260,6 +263,10 @@
       </div>
     </div>
 
-    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบและอ่านบัญชีรายการชุดข้อมูล กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
+    <footer class="app-footer">
+      <p class="container" data-i18n="app.footer">© มหาวิทยาลัยสงขลานครินทร์ · การเข้าใช้งานระบบถูกบันทึกเพื่อการตรวจสอบตามนโยบายความมั่นคงปลอดภัยสารสนเทศ</p>
+    </footer>
+
+    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่ออ่านบัญชีรายการชุดข้อมูล โปรดเปิดใช้ JavaScript หรือติดต่อผู้ดูแลระบบ</div></noscript>
   </body>
 </html>
