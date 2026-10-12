@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="ขอเผยแพร่และอนุมัติชุดข้อมูลจาก curated สู่ published · PSU Data Hub">
+    <title>เผยแพร่ชุดข้อมูล · PSU Data Hub</title>
+    <link rel="preload" href="/fonts/sarabun-thai-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/sarabun-thai-800.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/i18n/th.js" defer></script>
+    <script src="/i18n/en.js" defer></script>
+    <script src="/i18n/index.js" defer></script>
+    <script src="/publish.js" defer></script>
+  </head>
+  <body class="login-body review-body">
+    <a class="skip-link" href="#publish-main" data-i18n="skip">ข้ามไปยังเนื้อหาหลัก</a>
+
+    <header class="login-header">
+      <a class="brand" href="/" aria-label="PSU Data Hub หน้าแรก" data-i18n-attr="aria-label:brand.home">
+        <span class="brand-mark" aria-hidden="true">PSU</span>
+        <span class="brand-copy">
+          <strong>PSU Data Hub</strong>
+        </span>
+      </a>
+      <div class="header-actions">
+        <button class="lang-switch" type="button" id="lang-switch"
+                aria-label="เปลี่ยนเป็นภาษาอังกฤษ" data-i18n-attr="aria-label:lang.switchLabel">
+          <span aria-hidden="true">&#127760;</span><span data-i18n="lang.switchTo">English</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="publish-main" class="login-main review-main">
+      <div class="login-card review-card">
+        <p class="login-status" id="publish-status" role="status" aria-live="polite" hidden></p>
+
+        <div id="publish-content-area" hidden>
+          <div class="review-header-flex">
+            <div>
+              <h1 class="login-heading" data-i18n="publish.heading">เผยแพร่ชุดข้อมูล</h1>
+              <p class="login-subheading" data-i18n="publish.subheading">นักวิเคราะห์ขอเผยแพร่ตารางจาก curated เจ้าของข้อมูลของหน่วยงานเป็นผู้อนุมัติ แล้วระบบจึงคัดลอกเข้า published</p>
+            </div>
+            <div class="publish-header-actions">
+              <button class="button button-ghost review-refresh-btn" type="button" id="publish-refresh-btn" data-i18n="review.refresh">รีเฟรชข้อมูล</button>
+              <button class="button button-primary" type="button" id="publish-new-btn" hidden data-i18n="publish.newRequest">ขอเผยแพร่ชุดข้อมูล</button>
+            </div>
+          </div>
+
+          <div class="review-stats-grid">
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="publish.tabOpen">รออนุมัติ</span>
+              <strong class="review-stat-value text-caution" id="stat-open">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="publish.tabPublished">เผยแพร่แล้ว</span>
+              <strong class="review-stat-value text-positive" id="stat-published">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="publish.tabClosed">ไม่สำเร็จ / ปฏิเสธ</span>
+              <strong class="review-stat-value text-critical" id="stat-closed">0</strong>
+            </div>
+            <div class="review-stat-card">
+              <span class="review-stat-label" data-i18n="review.tabAll">ทั้งหมด</span>
+              <strong class="review-stat-value" id="stat-total">0</strong>
+            </div>
+          </div>
+
+          <div class="review-tabs" role="tablist">
+            <button class="review-tab is-active" type="button" role="tab" data-filter="open">
+              <span data-i18n="publish.tabOpen">รออนุมัติ</span>
+              <span class="review-badge-counter" id="badge-open">0</span>
+            </button>
+            <button class="review-tab" type="button" role="tab" data-filter="published" data-i18n="publish.tabPublished">เผยแพร่แล้ว</button>
+            <button class="review-tab" type="button" role="tab" data-filter="closed" data-i18n="publish.tabClosed">ไม่สำเร็จ / ปฏิเสธ</button>
+            <button class="review-tab" type="button" role="tab" data-filter="all" data-i18n="review.tabAll">ทั้งหมด</button>
+          </div>
+
+          <div class="review-table-wrapper" role="region" aria-live="polite">
+            <div id="publish-list-container" class="review-list-container">
+              <p class="review-empty-state" data-i18n="review.loading">กำลังโหลดข้อมูล…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <a class="login-back" href="/" data-i18n="login.backHome">กลับหน้าแรก</a>
+    </main>
+
+    <!-- New release request -->
+    <div class="review-modal-backdrop" id="request-modal-backdrop" hidden>
+      <form class="review-modal" id="request-form" role="dialog" aria-modal="true" aria-labelledby="request-heading" novalidate>
+        <header class="review-modal-header">
+          <div>
+            <h2 class="review-modal-title" id="request-heading" data-i18n="publish.requestTitle">ขอเผยแพร่ชุดข้อมูล</h2>
+            <p class="review-modal-subtitle" data-i18n="publish.requestSubtitle">ตารางจะถูกเผยแพร่ด้วยชื่อเดิมใน polaris.published หลังเจ้าของข้อมูลอนุมัติ</p>
+          </div>
+          <button class="review-modal-close" type="button" data-close-modal aria-label="Close">&times;</button>
+        </header>
+
+        <div class="review-modal-body">
+          <div class="modal-feedback-alert" id="request-alert" hidden></div>
+
+          <div class="publish-form-grid">
+            <div class="upload-input-group publish-span-2">
+              <label for="request-table" data-i18n="publish.fieldTable">ตารางใน curated</label>
+              <select id="request-table" class="publish-input" required></select>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-title-th" data-i18n="publish.fieldTitleTh">ชื่อชุดข้อมูล (ไทย)</label>
+              <input id="request-title-th" class="publish-input" type="text" maxlength="200" required>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-title-en" data-i18n="publish.fieldTitleEn">ชื่อชุดข้อมูล (อังกฤษ)</label>
+              <input id="request-title-en" class="publish-input" type="text" maxlength="200">
+            </div>
+            <div class="upload-input-group">
+              <label for="request-description-th" data-i18n="publish.fieldDescriptionTh">คำอธิบาย (ไทย)</label>
+              <textarea id="request-description-th" class="upload-note-textarea" rows="3" maxlength="2000"></textarea>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-description-en" data-i18n="publish.fieldDescriptionEn">คำอธิบาย (อังกฤษ)</label>
+              <textarea id="request-description-en" class="upload-note-textarea" rows="3" maxlength="2000"></textarea>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-owner" data-i18n="publish.fieldOwner">หน่วยงานเจ้าของข้อมูล (org unit)</label>
+              <input id="request-owner" class="publish-input" type="text" maxlength="64" pattern="^[a-z0-9_-]{1,64}$"
+                     placeholder="eng" required>
+              <p class="input-hint-text" data-i18n="publish.fieldOwnerHint">เจ้าของข้อมูลของหน่วยงานนี้เป็นผู้อนุมัติ</p>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-domain" data-i18n="publish.fieldDomain">หมวดข้อมูล</label>
+              <select id="request-domain" class="publish-input">
+                <option value="" data-i18n="publish.domainNone">ยังไม่จัดหมวด</option>
+                <option value="student" data-i18n="publish.domain.student">นักศึกษา</option>
+                <option value="personnel" data-i18n="publish.domain.personnel">บุคลากร</option>
+                <option value="research" data-i18n="publish.domain.research">งานวิจัย</option>
+                <option value="academic_services" data-i18n="publish.domain.academic_services">บริการวิชาการ</option>
+                <option value="indicator" data-i18n="publish.domain.indicator">ตัวชี้วัด</option>
+              </select>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-access" data-i18n="publish.fieldAccess">ระดับการเข้าถึง</label>
+              <select id="request-access" class="publish-input">
+                <option value="university" data-i18n="publish.access.university">ภายในมหาวิทยาลัย</option>
+                <option value="restricted" data-i18n="publish.access.restricted">จำกัด (ต้องขอสิทธิ์)</option>
+              </select>
+            </div>
+            <div class="upload-input-group">
+              <label for="request-cadence" data-i18n="publish.fieldCadence">รอบการอัปเดต</label>
+              <select id="request-cadence" class="publish-input">
+                <option value="manual" data-i18n="publish.cadence.manual">เมื่อมีการขอเผยแพร่ใหม่</option>
+                <option value="daily" data-i18n="publish.cadence.daily">รายวัน</option>
+                <option value="weekly" data-i18n="publish.cadence.weekly">รายสัปดาห์</option>
+                <option value="monthly" data-i18n="publish.cadence.monthly">รายเดือน</option>
+              </select>
+            </div>
+            <div class="upload-input-group publish-span-2">
+              <label for="request-tags" data-i18n="publish.fieldTags">แท็ก (คั่นด้วยจุลภาค ไม่เกิน 10)</label>
+              <input id="request-tags" class="publish-input" type="text" maxlength="440">
+            </div>
+            <div class="upload-input-group publish-span-2">
+              <label for="request-changelog" data-i18n="publish.fieldChangelog">สิ่งที่เปลี่ยนในรุ่นนี้</label>
+              <textarea id="request-changelog" class="upload-note-textarea" rows="2" maxlength="2000"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <footer class="review-modal-footer">
+          <div class="footer-left">
+            <button class="button button-ghost" type="button" data-close-modal data-i18n="review.btnClose">ปิด</button>
+          </div>
+          <div class="footer-actions">
+            <button class="button button-positive" type="submit" id="request-submit" data-i18n="publish.submitRequest">ส่งคำขอเผยแพร่</button>
+          </div>
+        </footer>
+      </form>
+    </div>
+
+    <!-- Release detail and decision -->
+    <div class="review-modal-backdrop" id="detail-modal-backdrop" hidden>
+      <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="detail-heading">
+        <header class="review-modal-header">
+          <div>
+            <h2 class="review-modal-title" id="detail-heading">—</h2>
+            <p class="review-modal-subtitle" id="detail-subtitle">—</p>
+          </div>
+          <button class="review-modal-close" type="button" data-close-modal aria-label="Close">&times;</button>
+        </header>
+
+        <div class="review-modal-body">
+          <p class="login-status" id="detail-status" role="status" aria-live="polite" hidden></p>
+          <div class="modal-feedback-alert" id="detail-alert" hidden></div>
+
+          <section class="modal-section modal-meta-section">
+            <h3 class="modal-section-title" data-i18n="review.sectionMeta">ข้อมูลทั่วไป</h3>
+            <dl class="modal-meta-grid" id="detail-meta"></dl>
+            <div class="modal-steward-note-box" id="detail-description-box" hidden>
+              <p id="detail-description" class="modal-steward-note"></p>
+            </div>
+            <div class="modal-steward-note-box" id="detail-changelog-box" hidden>
+              <strong data-i18n="publish.fieldChangelog">สิ่งที่เปลี่ยนในรุ่นนี้</strong>
+              <p id="detail-changelog" class="modal-steward-note"></p>
+            </div>
+          </section>
+
+          <section class="modal-section" id="detail-columns-section" hidden>
+            <div class="section-title-flex">
+              <h3 class="modal-section-title" data-i18n="publish.sectionColumns">โครงสร้างตารางใน curated</h3>
+              <span class="summary-pill" id="detail-row-count"></span>
+            </div>
+            <p class="input-hint-text" data-i18n="publish.previewNoRows">แสดงเฉพาะชื่อและชนิดคอลัมน์ ไม่แสดงตัวอย่างแถว เพื่อไม่ให้เห็นข้อมูลของหน่วยงานอื่น</p>
+            <div class="columns-table-wrapper">
+              <table class="columns-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="review.columnColName">ชื่อคอลัมน์ (SQL)</th>
+                    <th data-i18n="review.columnType">ประเภทข้อมูล</th>
+                  </tr>
+                </thead>
+                <tbody id="detail-columns-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <footer class="review-modal-footer">
+          <div class="footer-left">
+            <button class="button button-ghost" type="button" data-close-modal data-i18n="review.btnClose">ปิด</button>
+          </div>
+          <div class="footer-actions" id="detail-actions" hidden>
+            <button class="button button-danger" type="button" id="btn-reject-release" data-i18n="review.btnReject">ปฏิเสธ</button>
+            <button class="button button-positive" type="button" id="btn-approve-release" data-i18n="publish.btnApprove">อนุมัติและเผยแพร่</button>
+          </div>
+          <div class="modal-reject-drawer" id="detail-reject-drawer" hidden>
+            <label for="release-reject-reason" class="reject-drawer-label" data-i18n="review.rejectReasonPrompt">ระบุเหตุผลในการปฏิเสธ (เพื่อแจ้งให้เจ้าของข้อมูลทราบ):</label>
+            <textarea id="release-reject-reason" rows="2" maxlength="1000" class="reject-reason-input"></textarea>
+            <div class="reject-drawer-buttons">
+              <button class="button button-ghost button-small" type="button" id="btn-cancel-reject" data-i18n="review.btnCancel">ยกเลิก</button>
+              <button class="button button-danger button-small" type="button" id="btn-confirm-reject" data-i18n="review.btnConfirmReject">ยืนยันปฏิเสธ</button>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <noscript><div class="noscript-message" data-i18n="noscript">หน้านี้ต้องใช้ JavaScript เพื่อสร้างลิงก์ระบบและอ่านบัญชีรายการชุดข้อมูล กรุณาเปิด JavaScript หรือขอความช่วยเหลือจากผู้ดูแล</div></noscript>
+  </body>
+</html>

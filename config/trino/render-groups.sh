@@ -39,6 +39,7 @@ validate_username PSU_ADMIN_USERNAME "${PSU_ADMIN_USERNAME}"
 validate_username PSU_ANALYST_USERNAME "${PSU_ANALYST_USERNAME}"
 validate_username TRINO_INGESTION_USERNAME "${TRINO_INGESTION_USERNAME}"
 validate_username TRINO_MAINTENANCE_USERNAME "${TRINO_MAINTENANCE_USERNAME}"
+validate_username TRINO_PUBLISHER_USERNAME "${TRINO_PUBLISHER_USERNAME}"
 
 all_usernames="${PSU_ADMIN_USERNAME} ${PSU_ANALYST_USERNAME} ${TRINO_INGESTION_USERNAME} ${TRINO_MAINTENANCE_USERNAME}"
 
@@ -50,6 +51,16 @@ for reserved in "${PSU_ADMIN_USERNAME}" "${PSU_ANALYST_USERNAME}" "${TRINO_INGES
     exit 1
   fi
 done
+
+# The publisher is the only non-admin identity that writes published, so it
+# must not share a name -- and with it a group line -- with anything else.
+for reserved in ${all_usernames}; do
+  if [ "${reserved}" = "${TRINO_PUBLISHER_USERNAME}" ]; then
+    echo "TRINO_PUBLISHER_USERNAME must differ from every other Trino identity" >&2
+    exit 1
+  fi
+done
+all_usernames="${all_usernames} ${TRINO_PUBLISHER_USERNAME}"
 
 viewer_index=1
 viewer_usernames=""
@@ -103,6 +114,7 @@ group_file_tmp="/output/groups.txt.tmp"
   printf 'psu_admin:%s\n' "${PSU_ADMIN_USERNAME}"
   printf 'psu_ingestion:%s\n' "${TRINO_INGESTION_USERNAME}"
   printf 'psu_maintenance:%s\n' "${TRINO_MAINTENANCE_USERNAME}"
+  printf 'psu_publisher:%s\n' "${TRINO_PUBLISHER_USERNAME}"
   printf 'psu_analyst:%s,superset\n' "${PSU_ANALYST_USERNAME}"
   printf 'psu_viewer:%s\n' "${viewer_usernames}"
   if [ -n "${exec_usernames}" ]; then

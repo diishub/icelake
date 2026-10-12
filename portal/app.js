@@ -623,6 +623,52 @@
     }
   }
 
+  // Releases approved through /publish.html appear here as soon as they are
+  // published, without waiting for scripts/publish-portal-catalog.sh to run
+  // again. psu-auth answers with metadata only (no account, no snapshot id),
+  // and when it is not running the catalogue simply shows what the file has.
+  async function mergePublishedReleases() {
+    let releases;
+    try {
+      const response = await fetch("/auth/catalog/releases", { cache: "no-store" });
+      if (!response.ok) {
+        return;
+      }
+      const body = await response.json();
+      releases = Array.isArray(body.releases) ? body.releases : [];
+    } catch (_error) {
+      return;
+    }
+
+    for (const release of releases) {
+      const dataset = {
+        key: `published.${release.tableName}`,
+        title: release.titleTh,
+        title_en: release.titleEn || release.titleTh,
+        description: release.descriptionTh,
+        description_en: release.descriptionEn || release.descriptionTh,
+        domain: release.domain || "unsorted",
+        availability: "published",
+        // A release replaces the whole published table at a pinned snapshot.
+        load_mode: "full_refresh",
+        owner: release.ownerOrgUnit,
+        last_success_at: release.publishedAt,
+        rows: release.rowCount
+      };
+      const existing = catalogState.datasets.findIndex((item) => item.key === dataset.key);
+      if (existing >= 0) {
+        catalogState.datasets[existing] = dataset;
+        continue;
+      }
+      catalogState.datasets.push(dataset);
+      const domain = catalogState.domains.find((item) => item.key === dataset.domain);
+      if (domain) {
+        domain.dataset_count = (domain.dataset_count || 0) + 1;
+        domain.published_count = (domain.published_count || 0) + 1;
+      }
+    }
+  }
+
   async function loadCatalog() {
     const errorNote = document.querySelector("#catalog-error");
     const count = document.querySelector("#catalog-count");
@@ -637,6 +683,7 @@
       catalogState.document = catalog;
       catalogState.datasets = Array.isArray(catalog.datasets) ? catalog.datasets : [];
       catalogState.domains = Array.isArray(catalog.domains) ? catalog.domains : [];
+      await mergePublishedReleases();
 
       renderCatalogStats(catalog);
       renderDomains();
@@ -729,6 +776,16 @@
         authState.authenticated &&
         authState.user &&
         (authState.user.accessTier === "analyst" || authState.user.accessTier === "developer")
+      );
+    }
+
+    // Analysts ask for releases; stewards approve their own unit's.
+    const publishLink = document.querySelector("#account-publish-link");
+    if (publishLink) {
+      publishLink.hidden = !(
+        authState.authenticated &&
+        authState.user &&
+        ["analyst", "developer", "steward"].includes(authState.user.accessTier)
       );
     }
   }

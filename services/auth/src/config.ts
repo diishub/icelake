@@ -137,6 +137,16 @@ export interface AppConfig {
     username: string;
     password: string;
   } | undefined;
+  /**
+   * The Trino identity that writes approved releases into published -- see
+   * config/platform/021-dataset-release.sql. Undefined leaves /auth/releases
+   * answering 503, the same as the other optional integrations above.
+   */
+  publisher: {
+    endpoint: string;
+    username: string;
+    password: string;
+  } | undefined;
 }
 
 export function readConfig(): AppConfig {
@@ -204,6 +214,7 @@ export function readConfig(): AppConfig {
     supersetEmbed: readSupersetEmbedConfig(),
     rustfs: readRustfsConfig(),
     trino: readTrinoConfig(),
+    publisher: readPublisherConfig(),
   };
 }
 
@@ -282,6 +293,18 @@ function readTrinoConfig(): AppConfig['trino'] {
   return {
     endpoint: optional('TRINO_ENDPOINT') ?? 'https://trino:8443',
     username: optional('TRINO_INGESTION_USERNAME') ?? 'nifi',
+    password,
+  };
+}
+
+function readPublisherConfig(): AppConfig['publisher'] {
+  const password = optional('TRINO_PUBLISHER_PASSWORD');
+  if (!password) {
+    return undefined;
+  }
+  return {
+    endpoint: optional('TRINO_ENDPOINT') ?? 'https://trino:8443',
+    username: optional('TRINO_PUBLISHER_USERNAME') ?? 'publisher',
     password,
   };
 }

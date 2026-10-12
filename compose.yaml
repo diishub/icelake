@@ -240,6 +240,7 @@ services:
       <<: *psu-viewer-identities
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
       TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
+      TRINO_PUBLISHER_USERNAME: ${TRINO_PUBLISHER_USERNAME:-publisher}
     entrypoint: /bin/sh
     command: /bootstrap/render-groups.sh
     volumes:
@@ -288,6 +289,8 @@ services:
       TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:?set TRINO_INGESTION_PASSWORD in .env}
       TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
       TRINO_MAINTENANCE_PASSWORD: ${TRINO_MAINTENANCE_PASSWORD:?set TRINO_MAINTENANCE_PASSWORD in .env}
+      TRINO_PUBLISHER_USERNAME: ${TRINO_PUBLISHER_USERNAME:-publisher}
+      TRINO_PUBLISHER_PASSWORD: ${TRINO_PUBLISHER_PASSWORD:?set TRINO_PUBLISHER_PASSWORD in .env}
       SUPERSET_TRINO_PASSWORD: ${SUPERSET_TRINO_PASSWORD:?set SUPERSET_TRINO_PASSWORD in .env}
     entrypoint: python
     command: /render/render-password-file.py
@@ -617,6 +620,10 @@ services:
       TRINO_ENDPOINT: ${TRINO_ENDPOINT:-https://trino:8443}
       TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
       TRINO_INGESTION_PASSWORD: ${TRINO_INGESTION_PASSWORD:-}
+      # Dataset releases (config/platform/021-dataset-release.sql). Optional
+      # like the rest: unset leaves /auth/releases answering 503.
+      TRINO_PUBLISHER_USERNAME: ${TRINO_PUBLISHER_USERNAME:-publisher}
+      TRINO_PUBLISHER_PASSWORD: ${TRINO_PUBLISHER_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
