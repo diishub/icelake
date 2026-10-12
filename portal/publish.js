@@ -220,7 +220,7 @@
 
   const STATUS_BADGE = {
     requested: "status-badge-pending",
-    approved: "status-badge-pending",
+    approved: "status-badge-progress",
     published: "status-badge-registered",
     rejected: "status-badge-rejected",
     failed: "status-badge-rejected",

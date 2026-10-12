@@ -128,7 +128,7 @@
     let rejectedCount = 0;
 
     for (const item of list) {
-      if (item.status === "pending") pendingCount++;
+      if (item.status === "pending_review") pendingCount++;
       else if (item.status === "registered") registeredCount++;
       else if (item.status === "rejected") rejectedCount++;
     }
@@ -154,14 +154,6 @@
     if (!Array.isArray(uploads) || uploads.length === 0) {
       listEl.innerHTML = `
         <div class="upload-history-empty-state">
-          <div class="empty-icon-circle" aria-hidden="true">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="12" y1="18" x2="12" y2="12"></line>
-              <line x1="9" y1="15" x2="15" y2="15"></line>
-            </svg>
-          </div>
           <p class="upload-history-empty">${t("upload.emptyHistory")}</p>
         </div>
       `;
@@ -200,21 +192,18 @@
       let statusClass = "status-badge-pending";
       let statusText = t("upload.statusPending");
       let statusDetail = t("upload.pendingDetail");
-      let statusIcon = `<span class="status-pulse-dot" aria-hidden="true"></span>`;
 
       if (item.status === "registered") {
         statusClass = "status-badge-registered";
         statusText = t("upload.statusRegistered");
-        statusIcon = `<span class="status-check-icon" aria-hidden="true">&#10003;</span>`;
         statusDetail = item.targetTable
-          ? `${t("upload.targetTablePrefix")} <code class="target-table-code" title="คลิกเพื่อคัดลอก">polaris.raw.${escapeHtml(item.targetTable)}</code>`
+          ? `${t("upload.targetTablePrefix")} <code class="target-table-code">polaris.raw.${escapeHtml(item.targetTable)}</code>`
           : t("upload.documentApproved");
       } else if (item.status === "rejected") {
         statusClass = "status-badge-rejected";
         statusText = t("upload.statusRejected");
-        statusIcon = `<span class="status-cross-icon" aria-hidden="true">&#10005;</span>`;
         statusDetail = item.reviewedByUsername
-          ? `Reviewed by ${escapeHtml(item.reviewedByUsername)}`
+          ? escapeHtml(t("upload.reviewedBy", { name: item.reviewedByUsername }))
           : "";
       }
 
@@ -223,7 +212,6 @@
         const reasonText = item.rejectionReason || t("upload.noReasonProvided");
         rejectionHtml = `
           <div class="upload-rejection-box" role="alert">
-            <div class="rejection-icon" aria-hidden="true">&#9888;</div>
             <div class="rejection-body">
               <span class="upload-rejection-label">${escapeHtml(t("upload.rejectionReasonLabel"))}:</span>
               <span class="upload-rejection-text">${escapeHtml(reasonText)}</span>
@@ -236,7 +224,6 @@
       if (item.uploaderNote) {
         noteHtml = `
           <div class="upload-note-box">
-            <span class="note-quote-icon" aria-hidden="true">&#128172;</span>
             <div class="note-body">
               <span class="upload-note-label">${escapeHtml(t("upload.yourNoteLabel"))}:</span>
               <span class="upload-note-text">${escapeHtml(item.uploaderNote)}</span>
@@ -254,17 +241,14 @@
             </div>
             <div class="upload-item-meta">
               <span class="file-size-tag">${formatBytes(item.sizeBytes)}</span>
-              <span class="meta-dot">&bull;</span>
+              <span class="meta-dot" aria-hidden="true">·</span>
               <time datetime="${escapeHtml(item.uploadedAt)}" class="upload-time">${formatDate(item.uploadedAt)}</time>
             </div>
             ${noteHtml}
             ${rejectionHtml}
           </div>
           <div class="upload-item-status">
-            <span class="upload-status-badge ${statusClass}">
-              ${statusIcon}
-              <span>${statusText}</span>
-            </span>
+            <span class="upload-status-badge ${statusClass}">${statusText}</span>
             ${statusDetail ? `<div class="upload-status-detail">${statusDetail}</div>` : ""}
           </div>
         </article>

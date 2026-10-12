@@ -17,6 +17,7 @@ const pages = [
   ["reports.html", "reports.js"],
   ["review.html", "review.js"],
   ["publish.html", "publish.js"],
+  ["admin.html", "admin.js"],
 ];
 
 const used = new Set();
@@ -37,20 +38,18 @@ for (const [htmlFile, jsFile] of pages) {
   }
 }
 
-// Keys the code builds at run time from a template literal, which the scan
-// above cannot see. Listed here so they are still covered.
-for (const role of ["viewer", "analyst", "steward", "operator"]) {
-  for (const part of ["label", "title", "description", "step1", "step2", "step3"]) {
-    used.add(`role.${role}.${part}`);
+// Keys the code builds at run time from a template literal or a ternary,
+// which the scan above cannot see. Listed here so they are still covered.
+for (const script of ["workspace.js"]) {
+  for (const match of fs.readFileSync(script, "utf8").matchAll(/\bt\("([^"]+)"/g)) {
+    used.add(match[1]);
   }
 }
-for (const role of ["viewer", "analyst", "steward"]) {
-  used.add(`role.${role}.action`);
-  used.add(`role.${role}.footnote`);
+for (const tier of ["none", "viewer", "viewer_exec", "analyst", "steward", "developer"]) {
+  used.add(`tier.${tier}`);
 }
 for (const key of [
-  "role.operator.actionLocal", "role.operator.actionRemote",
-  "role.operator.footnoteLocal", "role.operator.footnoteRemote",
+  "catalog.openReport", "catalog.requestAccess",
   "availability.published", "availability.withheld",
   "availability.pending", "availability.retired",
   "loadMode.full_refresh", "loadMode.incremental",
