@@ -29,12 +29,18 @@ import { mintDashboardGuestToken } from './supersetEmbed.js';
 import { putStagedUpload, putObject, getObject } from './rustfs.js';
 import { bridgeCsvToIceberg } from './trino.js';
 import type { ReviewColumn } from './trino.js';
+import {
+  listCuratedTables, previewCuratedTable, publishCuratedTable, PublishError, TABLE_NAME,
+} from './publish.js';
 import { extractPlainText } from './textExtract.js';
 import {
   clearCookie, readCookies, readJsonBody, safeNextPath, sendJson, sendRedirect, setCookie,
 } from './http.js';
 
-import type { Account, AccessTier } from './store.js';
+import { ReleaseConflictError } from './store.js';
+import type {
+  Account, AccessTier, ReleaseAccessLevel, ReleaseCadence, ReleaseRecord, ReleaseRequestInput,
+} from './store.js';
 
 const OIDC_HANDLE_COOKIE = 'psu_hub_login';
 
@@ -812,6 +818,333 @@ async function handleRejectReview(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Dataset releases: curated -> published, with a data owner's approval
+// ---------------------------------------------------------------------------
+//
+// An analyst asks; the steward for the dataset's org unit, or a developer,
+// decides; nobody decides their own request (enforced here, in the UPDATE, and
+// by a CHECK in config/platform/021-dataset-release.sql). The copy itself runs
+// as the Trino publisher identity -- the one non-admin identity OPA lets write
+// published -- after the response has gone back, because a large table can
+// take longer to copy than nginx waits for an answer.
+
+const RELEASE_REQUEST_TIERS: readonly AccessTier[] = ['analyst', 'developer'];
+const RELEASE_DOMAINS = ['student', 'personnel', 'research', 'academic_services', 'indicator'];
+const RELEASE_ACCESS_LEVELS: readonly ReleaseAccessLevel[] = ['university', 'restricted'];
+const RELEASE_CADENCES: readonly ReleaseCadence[] = ['manual', 'daily', 'weekly', 'monthly'];
+const ORG_UNIT = /^[a-z0-9_-]{1,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Who may see a release: requesters see all, a steward only their own org unit's. */
+function releaseScopeFor(account: Account): { orgUnit: string | null } | null {
+  if (RELEASE_REQUEST_TIERS.includes(account.accessTier)) {
+    return { orgUnit: null };
+  }
+  if (account.accessTier === 'steward' && account.orgUnit) {
+    return { orgUnit: account.orgUnit };
+  }
+  return null;
+}
+
+function canDecide(account: Account, release: ReleaseRecord): boolean {
+  if (release.requestedBy === account.userId) {
+    return false;
+  }
+  if (account.accessTier === 'developer') {
+    return true;
+  }
+  return account.accessTier === 'steward' && account.orgUnit === release.ownerOrgUnit;
+}
+
+/** The release plus what this viewer may do with it, so the portal never has to re-derive the rule. */
+function releaseView(account: Account, release: ReleaseRecord) {
+  return { ...release, canDecide: release.status === 'requested' && canDecide(account, release) };
+}
+
+function optionalText(value: unknown, max: number): string | null | 'invalid' {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    return 'invalid';
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > max) {
+    return 'invalid';
+  }
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseReleaseRequest(body: Record<string, unknown> | null): ReleaseRequestInput | string {
+  if (!body) {
+    return 'invalid_request';
+  }
+  const tableName = typeof body.tableName === 'string' ? body.tableName.trim() : '';
+  if (!TABLE_NAME.test(tableName)) {
+    return 'invalid_table_name';
+  }
+  const titleTh = optionalText(body.titleTh, 200);
+  if (titleTh === null || titleTh === 'invalid') {
+    return 'title_required';
+  }
+  const titleEn = optionalText(body.titleEn, 200);
+  const descriptionTh = optionalText(body.descriptionTh, 2000);
+  const descriptionEn = optionalText(body.descriptionEn, 2000);
+  const changelog = optionalText(body.changelog, 2000);
+  if ([titleEn, descriptionTh, descriptionEn, changelog].includes('invalid')) {
+    return 'invalid_text_field';
+  }
+  const domain = optionalText(body.domain, 64);
+  if (domain === 'invalid' || (domain !== null && !RELEASE_DOMAINS.includes(domain))) {
+    return 'invalid_domain';
+  }
+  const ownerOrgUnit = typeof body.ownerOrgUnit === 'string' ? body.ownerOrgUnit.trim().toLowerCase() : '';
+  if (!ORG_UNIT.test(ownerOrgUnit)) {
+    return 'invalid_owner_org_unit';
+  }
+  const accessLevel = body.accessLevel ?? 'university';
+  if (!RELEASE_ACCESS_LEVELS.includes(accessLevel as ReleaseAccessLevel)) {
+    return 'invalid_access_level';
+  }
+  const refreshCadence = body.refreshCadence ?? 'manual';
+  if (!RELEASE_CADENCES.includes(refreshCadence as ReleaseCadence)) {
+    return 'invalid_refresh_cadence';
+  }
+  const rawTags = body.tags ?? [];
+  if (!Array.isArray(rawTags) || rawTags.length > 10) {
+    return 'invalid_tags';
+  }
+  const tags: string[] = [];
+  for (const tag of rawTags) {
+    if (typeof tag !== 'string' || tag.trim().length === 0 || tag.trim().length > 40) {
+      return 'invalid_tags';
+    }
+    if (!tags.includes(tag.trim())) {
+      tags.push(tag.trim());
+    }
+  }
+  return {
+    tableName,
+    titleTh,
+    titleEn: titleEn as string | null,
+    descriptionTh: descriptionTh as string | null,
+    descriptionEn: descriptionEn as string | null,
+    domain,
+    tags,
+    ownerOrgUnit,
+    accessLevel: accessLevel as ReleaseAccessLevel,
+    refreshCadence: refreshCadence as ReleaseCadence,
+    changelog: changelog as string | null,
+  };
+}
+
+/** Signed-in account with some release scope, or null after the error has been sent. */
+async function requireReleaseAccount(req: IncomingMessage, res: ServerResponse): Promise<Account | null> {
+  const account = await requireAccount(readCookies(req.headers.cookie));
+  if (!account) {
+    sendJson(res, 401, { error: 'not_authenticated' });
+    return null;
+  }
+  if (!releaseScopeFor(account)) {
+    sendJson(res, 403, { error: 'tier_not_permitted' });
+    return null;
+  }
+  if (!config.publisher) {
+    sendJson(res, 503, { error: 'publishing_not_configured' });
+    return null;
+  }
+  return account;
+}
+
+async function handleListReleases(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  const scope = releaseScopeFor(account)!;
+  const releases = await store.releases.list(scope.orgUnit);
+  sendJson(res, 200, {
+    releases: releases.map((release) => releaseView(account, release)),
+    canRequest: RELEASE_REQUEST_TIERS.includes(account.accessTier),
+  });
+}
+
+async function handleListReleaseSources(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  if (!RELEASE_REQUEST_TIERS.includes(account.accessTier)) {
+    sendJson(res, 403, { error: 'tier_not_permitted' });
+    return;
+  }
+  try {
+    sendJson(res, 200, { tables: await listCuratedTables(config.publisher!) });
+  } catch (error) {
+    console.error('[auth] listing curated tables failed', error);
+    sendJson(res, 502, { error: 'trino_unavailable' });
+  }
+}
+
+async function handleCreateRelease(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  if (!RELEASE_REQUEST_TIERS.includes(account.accessTier)) {
+    sendJson(res, 403, { error: 'tier_not_permitted' });
+    return;
+  }
+  const parsed = parseReleaseRequest(await readJsonBody<Record<string, unknown>>(req));
+  if (typeof parsed === 'string') {
+    sendJson(res, 400, { error: parsed });
+    return;
+  }
+
+  // Checked against Trino rather than trusted from the form: a release for a
+  // table that is not a curated base table could never be approved anyway.
+  let tables: string[];
+  try {
+    tables = await listCuratedTables(config.publisher!);
+  } catch (error) {
+    console.error('[auth] listing curated tables failed', error);
+    sendJson(res, 502, { error: 'trino_unavailable' });
+    return;
+  }
+  if (!tables.includes(parsed.tableName)) {
+    sendJson(res, 404, { error: 'source_table_not_found' });
+    return;
+  }
+
+  try {
+    const release = await store.releases.create(parsed, account.userId);
+    sendJson(res, 201, { release: releaseView(account, release) });
+  } catch (error) {
+    if (error instanceof ReleaseConflictError) {
+      sendJson(res, 409, { error: 'release_already_open' });
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Reads a release the account is allowed to see; sends 404 for one it is not, so ids cannot be probed. */
+async function visibleRelease(account: Account, releaseId: string, res: ServerResponse): Promise<ReleaseRecord | null> {
+  const release = UUID.test(releaseId) ? await store.releases.get(releaseId) : null;
+  const scope = releaseScopeFor(account);
+  if (!release || !scope || (scope.orgUnit !== null && scope.orgUnit !== release.ownerOrgUnit)) {
+    sendJson(res, 404, { error: 'release_not_found' });
+    return null;
+  }
+  return release;
+}
+
+async function handleReleasePreview(req: IncomingMessage, res: ServerResponse, releaseId: string): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  const release = await visibleRelease(account, releaseId, res);
+  if (!release) {
+    return;
+  }
+  try {
+    const preview = await previewCuratedTable(config.publisher!, release.tableName);
+    sendJson(res, 200, { release: releaseView(account, release), preview });
+  } catch (error) {
+    console.error('[auth] release preview failed', error);
+    sendJson(res, 502, { error: 'trino_unavailable' });
+  }
+}
+
+/** The copy, after the approval response has gone. Every outcome lands on the release row. */
+async function runRelease(release: ReleaseRecord): Promise<void> {
+  try {
+    const outcome = await publishCuratedTable(config.publisher!, release.tableName);
+    await store.releases.markPublished(
+      release.releaseId,
+      outcome.sourceSnapshotId,
+      outcome.publishedSnapshotId,
+      outcome.rowCount,
+    );
+    console.info(`[auth] release ${release.releaseId} published ${release.tableName} v${release.version}`);
+  } catch (error) {
+    console.error(`[auth] release ${release.releaseId} failed`, error);
+    const code = error instanceof PublishError ? error.code : 'copy_failed';
+    const snapshot = error instanceof PublishError ? error.sourceSnapshotId : null;
+    await store.releases.markFailed(release.releaseId, code, snapshot);
+  }
+}
+
+async function handleApproveRelease(req: IncomingMessage, res: ServerResponse, releaseId: string): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  const release = await visibleRelease(account, releaseId, res);
+  if (!release) {
+    return;
+  }
+  if (release.requestedBy === account.userId) {
+    sendJson(res, 403, { error: 'self_approval_forbidden' });
+    return;
+  }
+  if (!canDecide(account, release)) {
+    sendJson(res, 403, { error: 'not_data_owner' });
+    return;
+  }
+  const claimed = await store.releases.claimForApproval(release.releaseId, account.userId);
+  if (!claimed) {
+    sendJson(res, 409, { error: 'release_already_decided' });
+    return;
+  }
+  sendJson(res, 202, { release: releaseView(account, claimed) });
+  void runRelease(claimed).catch((error: unknown) => {
+    console.error(`[auth] release ${claimed.releaseId} could not record its outcome`, error);
+  });
+}
+
+async function handleRejectRelease(req: IncomingMessage, res: ServerResponse, releaseId: string): Promise<void> {
+  const account = await requireReleaseAccount(req, res);
+  if (!account) {
+    return;
+  }
+  const release = await visibleRelease(account, releaseId, res);
+  if (!release) {
+    return;
+  }
+  if (release.requestedBy === account.userId) {
+    sendJson(res, 403, { error: 'self_approval_forbidden' });
+    return;
+  }
+  if (!canDecide(account, release)) {
+    sendJson(res, 403, { error: 'not_data_owner' });
+    return;
+  }
+  const body = await readJsonBody<{ reason?: unknown }>(req);
+  const reason = optionalText(body?.reason, 1000);
+  if (reason === null || reason === 'invalid') {
+    sendJson(res, 400, { error: 'reason_required' });
+    return;
+  }
+  if (!(await store.releases.reject(release.releaseId, account.userId, reason))) {
+    sendJson(res, 409, { error: 'release_already_decided' });
+    return;
+  }
+  const updated = await store.releases.get(release.releaseId);
+  sendJson(res, 200, { release: updated ? releaseView(account, updated) : null });
+}
+
+/**
+ * The published releases the portal catalogue lists. Public, like
+ * portal/data/catalog.json: titles and owners only, never who asked or
+ * approved, and never a snapshot id.
+ */
+async function handleCatalogReleases(res: ServerResponse): Promise<void> {
+  sendJson(res, 200, { releases: await store.releases.listPublished() });
+}
+
 async function route(
   oidc: OidcProvider | null,
   req: IncomingMessage,
@@ -889,6 +1222,49 @@ async function route(
     return;
   }
 
+  if (url.pathname === '/auth/catalog/releases' && req.method === 'GET') {
+    await handleCatalogReleases(res);
+    return;
+  }
+
+  if (url.pathname === '/auth/releases') {
+    if (req.method === 'GET') {
+      await handleListReleases(req, res);
+      return;
+    }
+    if (req.method === 'POST') {
+      await handleCreateRelease(req, res);
+      return;
+    }
+    sendJson(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
+  if (url.pathname === '/auth/releases/sources' && req.method === 'GET') {
+    await handleListReleaseSources(req, res);
+    return;
+  }
+
+  const releaseMatch = url.pathname.match(/^\/auth\/releases\/([^/]+)\/(preview|approve|reject)$/);
+  if (releaseMatch && releaseMatch[1] && releaseMatch[2]) {
+    const releaseId = releaseMatch[1];
+    const action = releaseMatch[2];
+    if (action === 'preview' && req.method === 'GET') {
+      await handleReleasePreview(req, res, releaseId);
+      return;
+    }
+    if (action === 'approve' && req.method === 'POST') {
+      await handleApproveRelease(req, res, releaseId);
+      return;
+    }
+    if (action === 'reject' && req.method === 'POST') {
+      await handleRejectRelease(req, res, releaseId);
+      return;
+    }
+    sendJson(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
   if (url.pathname === '/auth/login' && req.method === 'GET') {
     if (!oidc) {
       sendJson(res, 503, { error: 'psu_passport_not_configured' });
@@ -929,6 +1305,17 @@ async function route(
 
 async function main(): Promise<void> {
   await store.ping();
+
+  // Not fatal: sign-in must keep working on a database that has not had
+  // 021-dataset-release.sql applied yet.
+  try {
+    const interrupted = await store.releases.failInterrupted();
+    if (interrupted > 0) {
+      console.warn(`[auth] ${interrupted} release(s) were interrupted by a restart and marked failed`);
+    }
+  } catch (error) {
+    console.error('[auth] could not check for interrupted releases', error);
+  }
 
   // PSU Passport is optional at the process level. A deployment with no
   // registered client still serves email-and-password sign-in; only the two

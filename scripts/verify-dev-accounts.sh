@@ -58,6 +58,7 @@ check_trino_identity "$(grep '^PSU_ADMIN_USERNAME=' .env | cut -d= -f2)" PSU_ADM
 check_trino_identity "$(grep '^PSU_ANALYST_USERNAME=' .env | cut -d= -f2)" PSU_ANALYST_PASSWORD
 check_trino_identity "$(grep '^TRINO_INGESTION_USERNAME=' .env | cut -d= -f2)" TRINO_INGESTION_PASSWORD
 check_trino_identity "$(grep '^TRINO_MAINTENANCE_USERNAME=' .env | cut -d= -f2)" TRINO_MAINTENANCE_PASSWORD
+check_trino_identity "$(grep '^TRINO_PUBLISHER_USERNAME=' .env | cut -d= -f2)" TRINO_PUBLISHER_PASSWORD
 
 viewer_count="$(grep '^PSU_VIEWER_COUNT=' .env | cut -d= -f2)"
 viewer_index=1

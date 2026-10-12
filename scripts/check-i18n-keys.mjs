@@ -16,6 +16,7 @@ const pages = [
   ["upload.html", "upload.js"],
   ["reports.html", "reports.js"],
   ["review.html", "review.js"],
+  ["publish.html", "publish.js"],
 ];
 
 const used = new Set();
@@ -56,6 +57,26 @@ for (const key of [
   "userType.student", "userType.staff", "userType.unknown",
 ]) {
   used.add(key);
+}
+
+// publish.js builds these from a release's own fields and from psu-auth's
+// error codes.
+for (const status of ["requested", "approved", "published", "rejected", "failed"]) {
+  used.add(`publish.status.${status}`);
+}
+for (const level of ["university", "restricted"]) {
+  used.add(`publish.access.${level}`);
+}
+for (const cadence of ["manual", "daily", "weekly", "monthly"]) {
+  used.add(`publish.cadence.${cadence}`);
+}
+for (const domain of ["student", "personnel", "research", "academic_services", "indicator"]) {
+  used.add(`publish.domain.${domain}`);
+}
+const publishScript = fs.readFileSync("publish.js", "utf8");
+const knownErrors = publishScript.match(/const KNOWN_ERRORS = \[([^\]]*)\]/);
+for (const match of (knownErrors ? knownErrors[1] : "").matchAll(/"([a-z_]+)"/g)) {
+  used.add(`publish.error.${match[1]}`);
 }
 
 // Derived from the folder, so a new language is covered the moment its file
