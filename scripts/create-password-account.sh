@@ -104,10 +104,13 @@ fi
 generated_password="$(head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-24)"
 
 echo "hashing the password inside the psu-auth image (same bcryptjs build the service verifies with)..." >&2
-password_hash="$(docker compose --profile auth run --rm --no-deps --entrypoint node psu-auth \
-  dist/tools/hash-password.js "${generated_password}" "${bcrypt_cost}" 2>/tmp/create-password-account.stderr)"
-
-if [ -z "${password_hash}" ]; then
+# Inside the if, so a failing docker command reaches the message below instead
+# of set -e ending the script silently with its stderr still in the file --
+# which is what "docker: command not found" under a bash without Docker (WSL
+# bash picked up from PowerShell) looked like.
+if ! password_hash="$(docker compose --profile auth run --rm --no-deps --entrypoint node psu-auth \
+  dist/tools/hash-password.js "${generated_password}" "${bcrypt_cost}" 2>/tmp/create-password-account.stderr)" \
+  || [ -z "${password_hash}" ]; then
   echo "hashing failed:" >&2
   cat /tmp/create-password-account.stderr >&2
   rm -f /tmp/create-password-account.stderr
