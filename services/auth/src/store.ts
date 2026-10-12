@@ -73,6 +73,7 @@ const ACCOUNT_COLUMNS = `user_id, psu_username, display_name, email, user_type,
 
 export class IdentityStore {
   private readonly pool: pg.Pool;
+  readonly releases: ReleaseStore;
 
   constructor(config: AppConfig) {
     this.pool = new pg.Pool({
@@ -85,6 +86,7 @@ export class IdentityStore {
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });
+    this.releases = new ReleaseStore(this.pool);
   }
 
   async close(): Promise<void> {
@@ -425,3 +427,260 @@ export interface UploadRecord {
 
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
+
+export type ReleaseStatus = 'requested' | 'approved' | 'published' | 'failed' | 'rejected';
+export type ReleaseAccessLevel = 'university' | 'restricted';
+export type ReleaseCadence = 'manual' | 'daily' | 'weekly' | 'monthly';
+
+export interface ReleaseRequestInput {
+  tableName: string;
+  titleTh: string;
+  titleEn: string | null;
+  descriptionTh: string | null;
+  descriptionEn: string | null;
+  domain: string | null;
+  tags: string[];
+  ownerOrgUnit: string;
+  accessLevel: ReleaseAccessLevel;
+  refreshCadence: ReleaseCadence;
+  changelog: string | null;
+}
+
+export interface ReleaseRecord extends ReleaseRequestInput {
+  releaseId: string;
+  version: number;
+  status: ReleaseStatus;
+  requestedBy: string;
+  requestedByName: string | null;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  rejectionReason: string | null;
+  sourceSnapshotId: string | null;
+  publishedSnapshotId: string | null;
+  rowCount: number | null;
+  publishedAt: string | null;
+  failureCode: string | null;
+}
+
+/** What the public catalogue may show about a published release: no account, no snapshot, no failure detail. */
+export interface PublishedReleaseSummary {
+  tableName: string;
+  version: number;
+  titleTh: string;
+  titleEn: string | null;
+  descriptionTh: string | null;
+  descriptionEn: string | null;
+  domain: string | null;
+  tags: string[];
+  ownerOrgUnit: string;
+  accessLevel: ReleaseAccessLevel;
+  refreshCadence: ReleaseCadence;
+  rowCount: number | null;
+  publishedAt: string | null;
+}
+
+const isoOrNull = (value: unknown): string | null =>
+  value ? new Date(value as string).toISOString() : null;
+
+const RELEASE_COLUMNS = `r.release_id, r.table_name, r.version, r.title_th, r.title_en,
+  r.description_th, r.description_en, r.domain, r.tags, r.owner_org_unit, r.access_level,
+  r.refresh_cadence, r.changelog, r.status, r.requested_by, r.requested_at, r.decided_by,
+  r.decided_at, r.rejection_reason, r.source_snapshot_id, r.published_snapshot_id,
+  r.row_count, r.published_at, r.failure_code,
+  rq.display_name AS requested_by_name, dc.display_name AS decided_by_name`;
+
+const RELEASE_FROM = `identity.dataset_release AS r
+  JOIN identity.app_user AS rq ON rq.user_id = r.requested_by
+  LEFT JOIN identity.app_user AS dc ON dc.user_id = r.decided_by`;
+
+const releaseFromRow = (row: Record<string, unknown>): ReleaseRecord => ({
+  releaseId: String(row.release_id),
+  tableName: String(row.table_name),
+  version: Number(row.version),
+  titleTh: String(row.title_th),
+  titleEn: (row.title_en as string | null) ?? null,
+  descriptionTh: (row.description_th as string | null) ?? null,
+  descriptionEn: (row.description_en as string | null) ?? null,
+  domain: (row.domain as string | null) ?? null,
+  tags: (row.tags as string[] | null) ?? [],
+  ownerOrgUnit: String(row.owner_org_unit),
+  accessLevel: row.access_level as ReleaseAccessLevel,
+  refreshCadence: row.refresh_cadence as ReleaseCadence,
+  changelog: (row.changelog as string | null) ?? null,
+  status: row.status as ReleaseStatus,
+  requestedBy: String(row.requested_by),
+  requestedByName: (row.requested_by_name as string | null) ?? null,
+  requestedAt: isoOrNull(row.requested_at) ?? '',
+  decidedBy: (row.decided_by as string | null) ?? null,
+  decidedByName: (row.decided_by_name as string | null) ?? null,
+  decidedAt: isoOrNull(row.decided_at),
+  rejectionReason: (row.rejection_reason as string | null) ?? null,
+  // bigint arrives from pg as a string and stays one: an Iceberg snapshot id
+  // does not fit in a JavaScript number.
+  sourceSnapshotId: (row.source_snapshot_id as string | null) ?? null,
+  publishedSnapshotId: (row.published_snapshot_id as string | null) ?? null,
+  rowCount: row.row_count !== null && row.row_count !== undefined ? Number(row.row_count) : null,
+  publishedAt: isoOrNull(row.published_at),
+  failureCode: (row.failure_code as string | null) ?? null,
+});
+
+/** Raised when a request collides with an open one for the same table. */
+export class ReleaseConflictError extends Error {}
+
+/**
+ * Dataset releases -- see config/platform/021-dataset-release.sql. Shares the
+ * identity store's pool and role; identity_app holds column-level grants on
+ * the table, so this cannot rewrite who asked or what was asked for.
+ */
+export class ReleaseStore {
+  constructor(private readonly pool: pg.Pool) {}
+
+  /**
+   * The version is the next one for the table, computed in the same statement.
+   * Two requests racing for the same number are caught by the unique
+   * constraint, and one open request per table by the partial unique index,
+   * so either collision surfaces as ReleaseConflictError rather than a 500.
+   */
+  async create(input: ReleaseRequestInput, requestedBy: string): Promise<ReleaseRecord> {
+    let releaseId: string;
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO identity.dataset_release
+           (table_name, version, title_th, title_en, description_th, description_en, domain, tags,
+            owner_org_unit, access_level, refresh_cadence, changelog, requested_by)
+         SELECT $1, COALESCE(max(version), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+           FROM identity.dataset_release
+          WHERE table_name = $1
+         RETURNING release_id`,
+        [
+          input.tableName, input.titleTh, input.titleEn, input.descriptionTh, input.descriptionEn,
+          input.domain, input.tags, input.ownerOrgUnit, input.accessLevel, input.refreshCadence,
+          input.changelog, requestedBy,
+        ],
+      );
+      releaseId = String(result.rows[0]?.release_id);
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new ReleaseConflictError('an open release already exists for this table');
+      }
+      throw error;
+    }
+    const created = await this.get(releaseId);
+    if (!created) {
+      throw new Error('release insert returned no row');
+    }
+    return created;
+  }
+
+  async get(releaseId: string): Promise<ReleaseRecord | null> {
+    const result = await this.pool.query(
+      `SELECT ${RELEASE_COLUMNS} FROM ${RELEASE_FROM} WHERE r.release_id = $1`,
+      [releaseId],
+    );
+    const row = result.rows[0];
+    return row ? releaseFromRow(row) : null;
+  }
+
+  /** Open requests first, then the most recent. `orgUnit` narrows to one data owner's releases. */
+  async list(orgUnit: string | null): Promise<ReleaseRecord[]> {
+    const result = await this.pool.query(
+      `SELECT ${RELEASE_COLUMNS} FROM ${RELEASE_FROM}
+        WHERE $1::text IS NULL OR r.owner_org_unit = $1
+        ORDER BY CASE r.status WHEN 'requested' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+                 r.requested_at DESC
+        LIMIT 200`,
+      [orgUnit],
+    );
+    return result.rows.map(releaseFromRow);
+  }
+
+  /**
+   * Moves a request to 'approved' only while it is still 'requested' and the
+   * decider is not the requester. The conditional UPDATE is the lock: of two
+   * approvers clicking at once, exactly one gets the row back.
+   */
+  async claimForApproval(releaseId: string, decidedBy: string): Promise<ReleaseRecord | null> {
+    const result = await this.pool.query(
+      `UPDATE identity.dataset_release
+          SET status = 'approved', decided_by = $2, decided_at = now()
+        WHERE release_id = $1 AND status = 'requested' AND requested_by <> $2
+        RETURNING release_id`,
+      [releaseId, decidedBy],
+    );
+    return result.rowCount ? this.get(releaseId) : null;
+  }
+
+  async markPublished(
+    releaseId: string,
+    sourceSnapshotId: string,
+    publishedSnapshotId: string,
+    rowCount: number | null,
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE identity.dataset_release
+          SET status = 'published', source_snapshot_id = $2, published_snapshot_id = $3,
+              row_count = $4, published_at = now(), failure_code = NULL
+        WHERE release_id = $1 AND status = 'approved'`,
+      [releaseId, sourceSnapshotId, publishedSnapshotId, rowCount],
+    );
+  }
+
+  async markFailed(releaseId: string, failureCode: string, sourceSnapshotId: string | null): Promise<void> {
+    await this.pool.query(
+      `UPDATE identity.dataset_release
+          SET status = 'failed', failure_code = $2, source_snapshot_id = $3
+        WHERE release_id = $1 AND status = 'approved'`,
+      [releaseId, failureCode, sourceSnapshotId],
+    );
+  }
+
+  /**
+   * A release copies after the approval response has gone, inside this
+   * process. One left 'approved' at start-up was cut off by a restart, and
+   * would otherwise hold the table's one open slot forever.
+   */
+  async failInterrupted(): Promise<number> {
+    const result = await this.pool.query(
+      `UPDATE identity.dataset_release
+          SET status = 'failed', failure_code = 'interrupted'
+        WHERE status = 'approved'`,
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async reject(releaseId: string, decidedBy: string, reason: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE identity.dataset_release
+          SET status = 'rejected', decided_by = $2, decided_at = now(), rejection_reason = $3
+        WHERE release_id = $1 AND status = 'requested' AND requested_by <> $2`,
+      [releaseId, decidedBy, reason],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async listPublished(): Promise<PublishedReleaseSummary[]> {
+    const result = await this.pool.query(
+      `SELECT table_name, version, title_th, title_en, description_th, description_en, domain,
+              tags, owner_org_unit, access_level, refresh_cadence, row_count, published_at
+         FROM identity.v_published_release
+        ORDER BY title_th`,
+    );
+    return result.rows.map((row) => ({
+      tableName: String(row.table_name),
+      version: Number(row.version),
+      titleTh: String(row.title_th),
+      titleEn: row.title_en ?? null,
+      descriptionTh: row.description_th ?? null,
+      descriptionEn: row.description_en ?? null,
+      domain: row.domain ?? null,
+      tags: row.tags ?? [],
+      ownerOrgUnit: String(row.owner_org_unit),
+      accessLevel: row.access_level,
+      refreshCadence: row.refresh_cadence,
+      rowCount: row.row_count !== null ? Number(row.row_count) : null,
+      publishedAt: isoOrNull(row.published_at),
+    }));
+  }
+}

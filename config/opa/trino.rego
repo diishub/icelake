@@ -92,7 +92,7 @@ allow if {
 allow if {
   is_ingestion
   is_select
-  table.catalogName == "hive"
+  table.catalogName in {"polaris", "hive"}
   table.schemaName == "information_schema"
 }
 
@@ -140,13 +140,50 @@ allow if {
 # trusting them with every row in curated/published, not just their own
 # unit's. Revisit once there is a write path that can actually be scoped.
 
-# Analysts additionally get row-level write access on curated and published —
-# schema/table DDL (CreateTable, DropTable, ...) stays admin/ingestion-only.
+# Analysts additionally get row-level write access on curated -- schema/table
+# DDL (CreateTable, DropTable, ...) stays admin/ingestion-only. Published is
+# not writable here: what reaches it goes through a release a data owner
+# approved (identity.dataset_release), written by the publisher identity below.
 allow if {
   is_analyst
   table.catalogName == "polaris"
-  table.schemaName in {"curated", "published"}
+  table.schemaName == "curated"
   operation in {"InsertIntoTable", "UpdateTableColumns", "DeleteFromTable"}
+}
+
+# ---------------------------------------------------------------------------
+# Publishing
+# ---------------------------------------------------------------------------
+# The only non-admin identity that writes published. psu-auth runs a release
+# as this identity once a data owner has approved it, copying one pinned
+# curated snapshot into a published table of the same name -- the same name so
+# an entry in org_scoped_tables.json filters both copies alike.
+#
+# It reads curated in full, without the row filter a steward gets, because a
+# release copies the whole table; the filter applies again when viewers read
+# the published copy. It cannot touch raw or documents at all.
+is_publisher if "psu_publisher" in groups
+
+allow if {
+  is_publisher
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName in {"curated", "published", "information_schema"}
+}
+
+# CREATE OR REPLACE TABLE ... AS SELECT asks CreateTable, and DropTable when a
+# previous version exists. Iceberg keeps the replaced table's snapshot history,
+# so an earlier release stays readable with FOR VERSION AS OF.
+allow if {
+  is_publisher
+  table.catalogName == "polaris"
+  table.schemaName == "published"
+  operation in {"CreateTable", "DropTable", "InsertIntoTable"}
+}
+
+allow if {
+  is_publisher
+  operation in read_control_operations
 }
 
 # Trino implements SHOW/DESCRIBE through information_schema reads. Readers need

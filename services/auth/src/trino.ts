@@ -6,84 +6,143 @@ export interface TrinoConfig {
   password: string;
 }
 
+export interface TrinoColumn {
+  name: string;
+  type: string;
+}
+
+export interface TrinoResult {
+  columns: TrinoColumn[];
+  rows: unknown[][];
+}
+
+export interface TrinoQueryOptions {
+  /** Whole-statement budget, polling included. The query is cancelled when it runs out. */
+  timeoutMs?: number;
+  /** Rows beyond this fail the call rather than growing this process's memory without bound. */
+  maxRows?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_ROWS = 10_000;
+
+interface TrinoResponse {
+  nextUri?: string;
+  columns?: TrinoColumn[];
+  data?: unknown[][];
+  error?: { message?: string; errorName?: string };
+}
+
+function trinoRequest(
+  config: TrinoConfig,
+  url: URL,
+  method: 'POST' | 'GET' | 'DELETE',
+  body: string | null,
+  timeoutMs: number,
+): Promise<TrinoResponse> {
+  const authHeader = 'Basic ' + Buffer.from(`${config.username}:${config.password}`).toString('base64');
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method,
+        // Trino's certificate is self-signed in this stack (trino-tls-setup in
+        // compose.yaml); verifying it needs that keystore's CA distributed to
+        // this container, which is perimeter work, not this.
+        rejectUnauthorized: false,
+        timeout: timeoutMs,
+        headers: {
+          'X-Trino-User': config.username,
+          Authorization: authHeader,
+          ...(body !== null ? { 'Content-Type': 'text/plain' } : {}),
+        },
+      },
+      (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => (text += chunk));
+        res.on('end', () => {
+          const status = res.statusCode ?? 0;
+          if (method === 'DELETE') {
+            resolve({});
+            return;
+          }
+          // Every response is checked, not only the first: a 503 while
+          // polling is Trino shedding load and must not read as "done".
+          if (status < 200 || status >= 300) {
+            reject(new Error(`Trino HTTP ${status}: ${text.slice(0, 500)}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(text) as TrinoResponse);
+          } catch (error) {
+            reject(error as Error);
+          }
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error('Trino request timed out')));
+    req.on('error', reject);
+    if (body !== null) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
+/**
+ * Runs one statement to completion and returns every row. Bounded in both time
+ * and size: an unbounded read here would let one large table take this whole
+ * sign-in service down with it.
+ */
+export async function queryTrino(
+  config: TrinoConfig,
+  statement: string,
+  options: TrinoQueryOptions = {},
+): Promise<TrinoResult> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
+  const deadline = Date.now() + timeoutMs;
+  const remaining = () => Math.max(1, deadline - Date.now());
+
+  let state = await trinoRequest(config, new URL('/v1/statement', config.endpoint), 'POST', statement, remaining());
+  let columns: TrinoColumn[] = [];
+  const rows: unknown[][] = [];
+
+  for (;;) {
+    if (state.error) {
+      throw new Error(state.error.message || state.error.errorName || 'Trino execution error');
+    }
+    if (state.columns && columns.length === 0) {
+      columns = state.columns.map((c) => ({ name: c.name, type: c.type }));
+    }
+    if (Array.isArray(state.data)) {
+      rows.push(...state.data);
+    }
+    const tooLarge = rows.length > maxRows;
+    if (!state.nextUri && !tooLarge) {
+      return { columns, rows };
+    }
+
+    if (tooLarge || Date.now() >= deadline) {
+      // Best effort: tell Trino to stop rather than leave the query running
+      // for a caller that has already given up on it.
+      if (state.nextUri) {
+        await trinoRequest(config, new URL(state.nextUri), 'DELETE', null, 5_000).catch(() => undefined);
+      }
+      throw new Error(tooLarge ? `Trino result exceeded ${maxRows} rows` : 'Trino query timed out');
+    }
+    state = await trinoRequest(config, new URL(state.nextUri!), 'GET', null, remaining());
+  }
+}
+
+/** For statements run for their effect, where only the last page was ever read. */
 export async function executeTrinoSql(
   config: TrinoConfig,
   statement: string,
-): Promise<{ data?: any[][]; error?: string }> {
-  return new Promise((resolve, reject) => {
-    const url = new URL('/v1/statement', config.endpoint);
-    const authHeader = 'Basic ' + Buffer.from(`${config.username}:${config.password}`).toString('base64');
-
-    function postStatement() {
-      const req = https.request(
-        url,
-        {
-          method: 'POST',
-          rejectUnauthorized: false,
-          headers: {
-            'X-Trino-User': config.username,
-            'Authorization': authHeader,
-            'Content-Type': 'text/plain',
-          },
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => {
-            try {
-              if (res.statusCode && res.statusCode >= 400) {
-                return reject(new Error(`Trino HTTP ${res.statusCode}: ${body}`));
-              }
-              const parsed = JSON.parse(body);
-              pollNext(parsed);
-            } catch (e) {
-              reject(e);
-            }
-          });
-        },
-      );
-      req.on('error', reject);
-      req.write(statement);
-      req.end();
-    }
-
-    function pollNext(state: any) {
-      if (state.error) {
-        return reject(new Error(state.error.message || 'Trino execution error'));
-      }
-      if (!state.nextUri) {
-        return resolve({ data: state.data });
-      }
-      const nextUrl = new URL(state.nextUri);
-      const req = https.request(
-        nextUrl,
-        {
-          method: 'GET',
-          rejectUnauthorized: false,
-          headers: {
-            'X-Trino-User': config.username,
-            'Authorization': authHeader,
-          },
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => {
-            try {
-              const parsed = JSON.parse(body);
-              pollNext(parsed);
-            } catch (e) {
-              reject(e);
-            }
-          });
-        },
-      );
-      req.on('error', reject);
-      req.end();
-    }
-
-    postStatement();
-  });
+): Promise<{ data?: unknown[][] }> {
+  const result = await queryTrino(config, statement);
+  return { data: result.rows };
 }
 
 export interface ReviewColumn {

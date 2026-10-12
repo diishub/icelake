@@ -36,6 +36,8 @@ def identities():
     yield required("PSU_ANALYST_USERNAME"), required("PSU_ANALYST_PASSWORD")
     yield required("TRINO_INGESTION_USERNAME"), required("TRINO_INGESTION_PASSWORD")
     yield required("TRINO_MAINTENANCE_USERNAME"), required("TRINO_MAINTENANCE_PASSWORD")
+    # psu-auth writes an approved release into published as this identity.
+    yield required("TRINO_PUBLISHER_USERNAME"), required("TRINO_PUBLISHER_PASSWORD")
     # Superset connects under its own name and then impersonates the signed-in
     # user; the policy allows impersonation for this identity alone.
     yield "superset", required("SUPERSET_TRINO_PASSWORD")

@@ -58,11 +58,30 @@ test_analyst_can_insert_curated if {
   }})
 }
 
-test_analyst_can_update_published if {
+test_analyst_can_update_curated if {
   allow with input as object.union(analyst_context, {"action": {
     "operation": "UpdateTableColumns",
-    "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report", "columns": ["value"]}},
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "model", "columns": ["value"]}},
   }})
+}
+
+# Published changes only through an approved release, never a direct write.
+test_analyst_cannot_write_published if {
+  every operation in {"InsertIntoTable", "UpdateTableColumns", "DeleteFromTable", "CreateTable", "DropTable"} {
+    not allow with input as object.union(analyst_context, {"action": {
+      "operation": operation,
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+    }})
+  }
+}
+
+test_ingestion_cannot_write_published if {
+  every operation in {"InsertIntoTable", "CreateTable", "DropTable"} {
+    not allow with input as object.union(ingestion_context, {"action": {
+      "operation": operation,
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "report"}},
+    }})
+  }
 }
 
 test_analyst_can_delete_curated if {
@@ -438,6 +457,62 @@ test_steward_row_filter_absent_on_unscoped_table if {
     with input as object.union(steward_context, {"action": {
       "operation": "GetRowFilters",
       "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "not-listed"}},
+    }})
+    with data.org_scoped_tables as ["report"]
+}
+
+# ---------------------------------------------------------------------------
+# Publisher: copies an approved curated snapshot into published, nothing else
+# ---------------------------------------------------------------------------
+
+publisher_context := {"context": {"identity": {"user": "publisher", "groups": ["psu_publisher"]}}}
+
+test_publisher_reads_curated_including_snapshot_metadata if {
+  every table_name in {"enrolment", "enrolment$snapshots"} {
+    allow with input as object.union(publisher_context, {"action": {
+      "operation": "SelectFromColumns",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": table_name, "columns": ["a"]}},
+    }})
+  }
+}
+
+test_publisher_replaces_published_tables if {
+  every operation in {"CreateTable", "DropTable", "InsertIntoTable"} {
+    allow with input as object.union(publisher_context, {"action": {
+      "operation": operation,
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "published", "tableName": "enrolment"}},
+    }})
+  }
+}
+
+test_publisher_cannot_write_curated_or_raw if {
+  every schema in {"raw", "curated", "documents"} {
+    not allow with input as object.union(publisher_context, {"action": {
+      "operation": "CreateTable",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": schema, "tableName": "enrolment"}},
+    }})
+  }
+}
+
+test_publisher_cannot_read_raw if {
+  not allow with input as object.union(publisher_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "source", "columns": ["a"]}},
+  }})
+}
+
+test_publisher_cannot_impersonate if {
+  not allow with input as object.union(publisher_context, {"action": {
+    "operation": "ImpersonateUser",
+    "resource": {"user": {"user": "viewer"}},
+  }})
+}
+
+test_publisher_gets_no_row_filter if {
+  count(rowFilters) == 0
+    with input as object.union(publisher_context, {"action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "report"}},
     }})
     with data.org_scoped_tables as ["report"]
 }
