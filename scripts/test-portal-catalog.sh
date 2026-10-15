@@ -13,7 +13,7 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
-catalog="portal/data/catalog.json"
+catalog="portal/public/data/catalog.json"
 failures=0
 
 pass() { echo "PASS $1"; }

@@ -109,7 +109,10 @@ for name in ${all_usernames}; do
 done
 
 umask 022
-group_file_tmp="/output/groups.txt.tmp"
+# GROUP_FILE lets config/trino/sync-trino-groups.sh render the development
+# identities to a separate base file before merging portal grants into it.
+group_file="${GROUP_FILE:-/output/groups.txt}"
+group_file_tmp="${group_file}.tmp"
 {
   printf 'psu_admin:%s\n' "${PSU_ADMIN_USERNAME}"
   printf 'psu_ingestion:%s\n' "${TRINO_INGESTION_USERNAME}"
@@ -126,6 +129,6 @@ group_file_tmp="/output/groups.txt.tmp"
     printf 'psu_viewer_org_%s:%s\n' "${org_unit}" "${members}"
   done
 } >"${group_file_tmp}"
-mv "${group_file_tmp}" /output/groups.txt
+mv "${group_file_tmp}" "${group_file}"
 
 echo "Rendered Trino dev group mapping without credentials"
