@@ -1,5 +1,5 @@
 /*
- * Dedicated report page for viewer_exec/analyst/developer accounts --
+ * Dedicated report page for viewer_exec/analyst/developer/admin accounts --
  * embeds a live Superset dashboard via a guest token (services/auth's
  * /auth/embeds/<key>), so seeing real data never requires a second Superset
  * login. Gated client-side for UX only; the real gate is server-side in
@@ -18,7 +18,7 @@
   };
   const t = (key) => i18n.t(key);
 
-  const ALLOWED_TIERS = new Set(["viewer_exec", "analyst", "developer"]);
+  const ALLOWED_TIERS = new Set(["viewer_exec", "analyst", "developer", "admin"]);
   let embeddedDashboardMounted = false;
 
   // Same construction app.js's buildServiceUrl uses for every operator/BI

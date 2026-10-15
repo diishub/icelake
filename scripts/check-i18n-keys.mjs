@@ -40,12 +40,12 @@ for (const [htmlFile, jsFile] of pages) {
 
 // Keys the code builds at run time from a template literal or a ternary,
 // which the scan above cannot see. Listed here so they are still covered.
-for (const script of ["workspace.js"]) {
+for (const script of ["workspace.js", "password-toggle.js"]) {
   for (const match of fs.readFileSync(script, "utf8").matchAll(/\bt\("([^"]+)"/g)) {
     used.add(match[1]);
   }
 }
-for (const tier of ["none", "viewer", "viewer_exec", "analyst", "steward", "developer"]) {
+for (const tier of ["none", "viewer", "viewer_exec", "analyst", "steward", "developer", "admin"]) {
   used.add(`tier.${tier}`);
 }
 for (const key of [
@@ -54,6 +54,7 @@ for (const key of [
   "availability.pending", "availability.retired",
   "loadMode.full_refresh", "loadMode.incremental",
   "userType.student", "userType.staff", "userType.unknown",
+  "password.show", "password.hide",
 ]) {
   used.add(key);
 }
@@ -76,6 +77,18 @@ const publishScript = fs.readFileSync("publish.js", "utf8");
 const knownErrors = publishScript.match(/const KNOWN_ERRORS = \[([^\]]*)\]/);
 for (const match of (knownErrors ? knownErrors[1] : "").matchAll(/"([a-z_]+)"/g)) {
   used.add(`publish.error.${match[1]}`);
+}
+
+// admin.js builds these from psu-auth's error codes and the audit trail's
+// action names.
+const adminScript = fs.readFileSync("admin.js", "utf8");
+const adminErrors = adminScript.match(/const KNOWN_ERRORS = \[([^\]]*)\]/);
+for (const match of (adminErrors ? adminErrors[1] : "").matchAll(/"([a-z_]+)"/g)) {
+  used.add(`admin.error.${match[1]}`);
+}
+used.add("admin.error.generic");
+for (const action of ["account_created", "account_updated", "password_reset"]) {
+  used.add(`admin.action.${action}`);
 }
 
 // Derived from the folder, so a new language is covered the moment its file

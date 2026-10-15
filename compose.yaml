@@ -247,6 +247,34 @@ services:
       - ./config/trino/render-groups.sh:/bootstrap/render-groups.sh:ro
       - ./runtime/trino:/output
 
+  # Merges portal access grants (identity.v_trino_groups) into the group file
+  # dev-identity-setup renders, so a tier an admin grants or revokes in the
+  # portal reaches Trino within seconds without anyone running a host script.
+  # Reads the view as identity_app; writes only runtime/trino/groups*.txt.
+  trino-groups-sync:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      PSU_ADMIN_USERNAME: ${PSU_ADMIN_USERNAME}
+      PSU_ANALYST_USERNAME: ${PSU_ANALYST_USERNAME}
+      <<: *psu-viewer-identities
+      TRINO_INGESTION_USERNAME: ${TRINO_INGESTION_USERNAME:-nifi}
+      TRINO_MAINTENANCE_USERNAME: ${TRINO_MAINTENANCE_USERNAME:-maintenance}
+      TRINO_PUBLISHER_USERNAME: ${TRINO_PUBLISHER_USERNAME:-publisher}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
+      TRINO_GROUPS_SYNC_SECONDS: ${TRINO_GROUPS_SYNC_SECONDS:-10}
+    entrypoint: /bin/sh
+    command: [/bootstrap/sync-trino-groups.sh, loop]
+    volumes:
+      - ./config/trino/render-groups.sh:/bootstrap/render-groups.sh:ro
+      - ./config/trino/sync-trino-groups.sh:/bootstrap/sync-trino-groups.sh:ro
+      - ./runtime/trino:/output
+    depends_on:
+      platform-migrate:
+        condition: service_completed_successfully
+      dev-identity-setup:
+        condition: service_completed_successfully
+
   # Password authentication requires TLS, and a single-host development stack
   # has no certificate authority. keytool is already in the Trino image, so a
   # self-signed keystore costs no extra image. A real certificate is perimeter

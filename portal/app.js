@@ -603,7 +603,7 @@
       if (role) {
         // The granted tier, as the workspace header shows it; a password
         // account has no directory record, so its user type is always unknown.
-        const tiers = ["none", "viewer", "viewer_exec", "analyst", "steward", "developer"];
+        const tiers = ["none", "viewer", "viewer_exec", "analyst", "steward", "developer", "admin"];
         const tier = tiers.includes(authState.user.accessTier) ? authState.user.accessTier : "none";
         const label = t(`tier.${tier}`);
         const unit = authState.user.facultyNameTh || authState.user.orgUnit || authState.user.campusNameTh;
@@ -623,14 +623,14 @@
       reviewLink.hidden = !(
         authState.authenticated &&
         authState.user &&
-        (authState.user.accessTier === "analyst" || authState.user.accessTier === "developer")
+        ["analyst", "developer", "admin"].includes(authState.user.accessTier)
       );
     }
 
     const adminLink = document.querySelector("#account-admin-link");
     if (adminLink) {
       adminLink.hidden = !(
-        authState.authenticated && authState.user && authState.user.accessTier === "developer"
+        authState.authenticated && authState.user && ["admin", "developer"].includes(authState.user.accessTier)
       );
     }
 
@@ -640,7 +640,7 @@
       publishLink.hidden = !(
         authState.authenticated &&
         authState.user &&
-        ["analyst", "developer", "steward"].includes(authState.user.accessTier)
+        ["analyst", "developer", "steward", "admin"].includes(authState.user.accessTier)
       );
     }
   }

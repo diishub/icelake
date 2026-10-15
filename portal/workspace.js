@@ -17,12 +17,12 @@
   // Mirrors the tier checks in services/auth/src/server.ts.
   const LINK_TIERS = {
     upload: ["steward"],
-    review: ["analyst", "developer"],
-    publish: ["analyst", "developer", "steward"],
-    reports: ["viewer_exec", "analyst", "developer"],
-    admin: ["developer"],
+    review: ["analyst", "developer", "admin"],
+    publish: ["analyst", "developer", "steward", "admin"],
+    reports: ["viewer_exec", "analyst", "developer", "admin"],
+    admin: ["admin", "developer"],
   };
-  const KNOWN_TIERS = ["none", "viewer", "viewer_exec", "analyst", "steward", "developer"];
+  const KNOWN_TIERS = ["none", "viewer", "viewer_exec", "analyst", "steward", "developer", "admin"];
 
   let user = null;
 

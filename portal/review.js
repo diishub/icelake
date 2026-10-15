@@ -1,6 +1,6 @@
 /*
  * Analyst review and approval interface.
- * Allows analysts and developers to review staged uploads, classify CSV columns,
+ * Allows analysts, developers and admins to review staged uploads, classify CSV columns,
  * inspect document text, and bridge approved datasets into Iceberg.
  */
 (() => {
@@ -20,7 +20,7 @@
   let activePreview = null;
   let columnStates = [];
 
-  const ALLOWED_TIERS = ["analyst", "developer"];
+  const ALLOWED_TIERS = ["analyst", "developer", "admin"];
   const ALLOWED_TYPES = ["VARCHAR", "INTEGER", "BIGINT", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP"];
 
   function setStatus(key) {

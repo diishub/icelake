@@ -29,10 +29,24 @@
 --   (only safe once no row still holds 'steward' or 'developer')
 --   then re-run 008-access-grants.sql to restore the previous view.
 
-ALTER TABLE identity.app_user DROP CONSTRAINT IF EXISTS app_user_access_tier_known;
-ALTER TABLE identity.app_user
-  ADD CONSTRAINT app_user_access_tier_known
-  CHECK (access_tier IN ('none', 'viewer', 'viewer_exec', 'analyst', 'steward', 'developer'));
+-- Widens 008's list. Guarded because every migration re-runs on every start
+-- (migrate.sh): once a later migration has widened the list again (022 adds
+-- 'admin') and a row holds the newer tier, re-adding this narrower list
+-- would fail -- after the DROP had already removed the constraint.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'app_user_access_tier_known'
+       AND pg_get_constraintdef(oid) LIKE '%''developer''%'
+  ) THEN
+    ALTER TABLE identity.app_user DROP CONSTRAINT IF EXISTS app_user_access_tier_known;
+    ALTER TABLE identity.app_user
+      ADD CONSTRAINT app_user_access_tier_known
+      CHECK (access_tier IN ('none', 'viewer', 'viewer_exec', 'analyst', 'steward', 'developer'));
+  END IF;
+END
+$$;
 
 -- A steward is always scoped to one org unit -- there is no "steward for the
 -- whole university" the way viewer_exec exists for viewers, because the

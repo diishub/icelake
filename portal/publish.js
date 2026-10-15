@@ -1,6 +1,6 @@
 /*
  * Dataset releases: an analyst asks for a curated table to be published, the
- * data owner for its org unit (or a developer) approves or rejects it, and
+ * data owner for its org unit (or a developer or admin) approves or rejects it, and
  * psu-auth copies it into polaris.published. See
  * config/platform/021-dataset-release.sql.
  *
@@ -19,7 +19,7 @@
   };
   const t = (key, replacements) => i18n.t(key, replacements);
 
-  const ALLOWED_TIERS = ["analyst", "developer", "steward"];
+  const ALLOWED_TIERS = ["analyst", "developer", "steward", "admin"];
   const OPEN = ["requested", "approved"];
   const CLOSED = ["rejected", "failed"];
   // An approved release is copying in the background; poll until it settles.
