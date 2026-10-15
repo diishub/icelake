@@ -3,8 +3,9 @@
 #
 # The failure this guards against is the quiet one: a string that was never
 # given a translation, which shows up as a single foreign line in the middle of
-# a page and is easy to miss in review. Every key the markup and the script ask
-# for has to exist in every file under portal/i18n, and every font the
+# a page and is easy to miss in review. Every key the pages ask for has to
+# exist in every language under portal/src/i18n -- en.ts is typed against
+# th.ts, so the type check below is what enforces it -- and every font the
 # stylesheet references has to be on disk.
 set -eu
 
@@ -17,8 +18,8 @@ fail() { failures=$((failures + 1)); echo "FAIL $1" >&2; }
 
 # --- Every referenced font file exists -------------------------------------
 missing_fonts=""
-for font in $(grep -oE '/fonts/[a-z0-9.-]+\.woff2' styles.css | sort -u); do
-  [ -f ".${font}" ] || missing_fonts="${missing_fonts} ${font}"
+for font in $(grep -oE '/fonts/[a-z0-9.-]+\.woff2' src/styles/globals.css | sort -u); do
+  [ -f "public${font}" ] || missing_fonts="${missing_fonts} ${font}"
 done
 if [ -z "${missing_fonts}" ]; then
   pass "every font the stylesheet references is vendored"
@@ -29,8 +30,8 @@ fi
 # The reverse direction matters too: a font left behind after a change is dead
 # weight that still ships.
 orphan_fonts=""
-for file in fonts/*.woff2; do
-  grep -q "/${file}" styles.css || orphan_fonts="${orphan_fonts} ${file}"
+for file in public/fonts/*.woff2; do
+  grep -q "/${file#public/}" src/styles/globals.css || orphan_fonts="${orphan_fonts} ${file}"
 done
 if [ -z "${orphan_fonts}" ]; then
   pass "no vendored font is unreferenced"
@@ -38,26 +39,21 @@ else
   fail "unreferenced font files:${orphan_fonts}"
 fi
 
-# --- Every language file is actually loaded --------------------------------
-unloaded=""
-for file in i18n/*.js; do
-  grep -q "\"/${file}\"" index.html || unloaded="${unloaded} ${file}"
-done
-if [ -z "${unloaded}" ]; then
-  pass "every language file has a script tag"
+# --- Every key resolves in every language ----------------------------------
+# t() only accepts keys th.ts declares, and en.ts must declare exactly the
+# same set, so a clean type check is the whole assertion. Needs `npm ci` in
+# portal/ first.
+if [ ! -d node_modules ]; then
+  fail "portal/node_modules is missing; run npm ci in portal/ first"
+elif npx --no-install tsc --noEmit; then
+  pass "every key the pages use exists in every language"
 else
-  fail "language files never loaded by the page:${unloaded}"
+  fail "type check failed (missing or extra i18n keys show up here)"
 fi
 
-# --- Every key resolves in every language ----------------------------------
-# A relative path on purpose: an absolute POSIX path is handed to node.exe
-# unconverted when MSYS_NO_PATHCONV is set, which the rest of this repo sets
-# for docker compose. Relative paths are passed through untouched.
-node ../scripts/check-i18n-keys.mjs || failures=$((failures + 1))
-
 # --- The catalogue carries translated names --------------------------------
-if [ -f data/catalog.json ]; then
-  if grep -q '"title_en"' data/catalog.json && grep -q '"label_en"' data/catalog.json; then
+if [ -f public/data/catalog.json ]; then
+  if grep -q '"title_en"' public/data/catalog.json && grep -q '"label_en"' public/data/catalog.json; then
     pass "the published catalogue carries English names"
   else
     fail "the published catalogue has no English names; re-run scripts/publish-portal-catalog.sh"

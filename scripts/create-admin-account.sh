@@ -59,7 +59,7 @@ SQL
 
 cat <<MSG
 
-${email} is now an admin. Sign in at the portal and open /admin.html to
+${email} is now an admin. Sign in at the portal and open /admin to
 manage accounts. The trino-groups-sync service picks up the new grant within
 a few seconds; run scripts/publish-trino-groups.sh if it is not running.
 

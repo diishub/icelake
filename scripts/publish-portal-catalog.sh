@@ -32,7 +32,7 @@ cd "${repo_dir}"
 MSYS_NO_PATHCONV=1
 export MSYS_NO_PATHCONV
 
-output_file="portal/data/catalog.json"
+output_file="portal/public/data/catalog.json"
 temp_file="${output_file}.tmp"
 
 if [ ! -f .env ]; then

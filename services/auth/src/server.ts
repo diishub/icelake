@@ -62,7 +62,7 @@ const publicProfile = (account: Account) => ({
   campusNameTh: account.campusNameTh,
   facultyNameTh: account.facultyNameTh,
   departmentNameTh: account.departmentNameTh,
-  // Drives role-specific portal rendering (portal/app.js). Not a secret -- it
+  // Drives role-specific portal rendering (portal/src/pages/index.tsx). Not a secret -- it
   // only ever reaches the account's own signed-in browser -- but it is still
   // just a display hint: every real permission check happens again in Trino
   // via OPA, and server-side here for the embed/upload routes below.
