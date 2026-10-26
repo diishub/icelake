@@ -1,9 +1,11 @@
 /**
  * Email-and-password sign-in.
  *
- * Accounts are provisioned by an administrator (scripts/create-password-account.sh),
- * never through a public sign-up form -- there is no route in server.ts that
- * inserts a password_hash. This module only ever verifies one.
+ * Accounts are provisioned by an administrator (scripts/create-password-account.sh,
+ * or an 'admin' account on the portal's admin page), never through a public
+ * sign-up form. The admin routes hash here and hand the hash to a database
+ * function (config/platform/022-admin-tier.sql); this service still has no
+ * direct write on password_hash.
  */
 import bcrypt from 'bcryptjs';
 

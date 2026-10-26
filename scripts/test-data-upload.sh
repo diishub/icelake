@@ -1,5 +1,5 @@
 #!/bin/sh
-# End-to-end check of the steward upload path (portal/upload.html ->
+# End-to-end check of the steward upload path (portal/src/pages/upload.tsx ->
 # POST /auth/uploads -> RustFS staging + identity.upload_event), the same
 # way test-password-login.sh exercises sign-in over real HTTP rather than
 # only at the schema level.

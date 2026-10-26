@@ -12,8 +12,9 @@
  *     /auth/login, /auth/callback answer 503 rather than taking the whole
  *     service down.
  *   - Email and password, against identity.app_user.password_hash. Accounts
- *     are created by an administrator (scripts/create-password-account.sh);
- *     there is no route here that writes one.
+ *     are created by an administrator: from the host
+ *     (scripts/create-password-account.sh) or by an 'admin' account on the
+ *     portal's admin page (/auth/admin/*), never by self-registration.
  */
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -23,8 +24,8 @@ import Busboy from 'busboy';
 import { readConfig } from './config.js';
 import { resolveDirectory } from './directory.js';
 import { OidcProvider } from './oidc.js';
-import { LoginRateLimiter, verifyPassword } from './password.js';
-import { IdentityStore } from './store.js';
+import { hashPassword, LoginRateLimiter, verifyPassword } from './password.js';
+import { ADMIN_ASSIGNABLE_TIERS, AdminActionError, IdentityStore } from './store.js';
 import { mintDashboardGuestToken } from './supersetEmbed.js';
 import { putStagedUpload, putObject, getObject } from './rustfs.js';
 import { bridgeCsvToIceberg } from './trino.js';
@@ -61,7 +62,7 @@ const publicProfile = (account: Account) => ({
   campusNameTh: account.campusNameTh,
   facultyNameTh: account.facultyNameTh,
   departmentNameTh: account.departmentNameTh,
-  // Drives role-specific portal rendering (portal/app.js). Not a secret -- it
+  // Drives role-specific portal rendering (portal/src/pages/index.tsx). Not a secret -- it
   // only ever reaches the account's own signed-in browser -- but it is still
   // just a display hint: every real permission check happens again in Trino
   // via OPA, and server-side here for the embed/upload routes below.
@@ -219,8 +220,10 @@ async function requireAccount(cookies: Map<string, string>): Promise<Account | n
   return account && account.isActive ? account : null;
 }
 
-const EMBED_ALLOWED_TIERS: readonly AccessTier[] = ['viewer_exec', 'analyst', 'developer'];
-const REVIEW_ALLOWED_TIERS: readonly AccessTier[] = ['analyst', 'developer'];
+// 'admin' reads everything a developer does (022-admin-tier.sql), so it is
+// let in wherever 'developer' is.
+const EMBED_ALLOWED_TIERS: readonly AccessTier[] = ['viewer_exec', 'analyst', 'developer', 'admin'];
+const REVIEW_ALLOWED_TIERS: readonly AccessTier[] = ['analyst', 'developer', 'admin'];
 
 /**
  * `key` is the portal-facing dashboard name (e.g. "ops") from the URL, not a
@@ -822,14 +825,14 @@ async function handleRejectReview(
 // Dataset releases: curated -> published, with a data owner's approval
 // ---------------------------------------------------------------------------
 //
-// An analyst asks; the steward for the dataset's org unit, or a developer,
-// decides; nobody decides their own request (enforced here, in the UPDATE, and
+// An analyst asks; the steward for the dataset's org unit, or a developer or
+// admin, decides; nobody decides their own request (enforced here, in the UPDATE, and
 // by a CHECK in config/platform/021-dataset-release.sql). The copy itself runs
 // as the Trino publisher identity -- the one non-admin identity OPA lets write
 // published -- after the response has gone back, because a large table can
 // take longer to copy than nginx waits for an answer.
 
-const RELEASE_REQUEST_TIERS: readonly AccessTier[] = ['analyst', 'developer'];
+const RELEASE_REQUEST_TIERS: readonly AccessTier[] = ['analyst', 'developer', 'admin'];
 const RELEASE_DOMAINS = ['student', 'personnel', 'research', 'academic_services', 'indicator'];
 const RELEASE_ACCESS_LEVELS: readonly ReleaseAccessLevel[] = ['university', 'restricted'];
 const RELEASE_CADENCES: readonly ReleaseCadence[] = ['manual', 'daily', 'weekly', 'monthly'];
@@ -851,7 +854,7 @@ function canDecide(account: Account, release: ReleaseRecord): boolean {
   if (release.requestedBy === account.userId) {
     return false;
   }
-  if (account.accessTier === 'developer') {
+  if (account.accessTier === 'developer' || account.accessTier === 'admin') {
     return true;
   }
   return account.accessTier === 'steward' && account.orgUnit === release.ownerOrgUnit;
@@ -1145,6 +1148,205 @@ async function handleCatalogReleases(res: ServerResponse): Promise<void> {
   sendJson(res, 200, { releases: await store.releases.listPublished() });
 }
 
+// ---------------------------------------------------------------------------
+// Account administration: admins create accounts and grant tiers
+// ---------------------------------------------------------------------------
+//
+// The portal's admin page drives these. The tier check here is the first of
+// two: every write also goes through a SECURITY DEFINER function in
+// config/platform/022-admin-tier.sql that re-checks the actor and refuses
+// 'developer', self-changes and developer targets on its own. A tier change
+// reaches Trino through the trino-groups-sync service, not from here.
+
+const USER_ADMIN_TIERS: readonly AccessTier[] = ['admin'];
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TRINO_USERNAME = /^[a-z0-9._-]{1,64}$/;
+const PASSWORD_MIN_LENGTH = 12;
+// bcrypt reads at most 72 bytes; anything past that would be silently ignored.
+const PASSWORD_MAX_BYTES = 72;
+// The Superset<->Trino connection user. A portal account with this name would
+// be impersonated as the connection itself.
+const RESERVED_USERNAMES = new Set(['superset']);
+const ORG_SCOPED_TIERS: readonly AccessTier[] = ['viewer', 'steward'];
+
+async function requireUserAdmin(req: IncomingMessage, res: ServerResponse): Promise<Account | null> {
+  const account = await requireAccount(readCookies(req.headers.cookie));
+  if (!account) {
+    sendJson(res, 401, { error: 'not_authenticated' });
+    return null;
+  }
+  if (!USER_ADMIN_TIERS.includes(account.accessTier)) {
+    sendJson(res, 403, { error: 'tier_not_permitted' });
+    return null;
+  }
+  return account;
+}
+
+function passwordProblem(password: unknown): string | null {
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+    return 'password_too_short';
+  }
+  if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) {
+    return 'password_too_long';
+  }
+  return null;
+}
+
+/** Tier and org unit together, since whether an org unit is required depends on the tier. */
+function parseGrant(body: Record<string, unknown>): { accessTier: AccessTier; orgUnit: string | null } | string {
+  const accessTier = body.accessTier;
+  if (typeof accessTier !== 'string' || !ADMIN_ASSIGNABLE_TIERS.includes(accessTier as AccessTier)) {
+    return 'tier_not_assignable';
+  }
+  const rawOrgUnit = typeof body.orgUnit === 'string' ? body.orgUnit.trim().toLowerCase() : '';
+  if (rawOrgUnit && !ORG_UNIT.test(rawOrgUnit)) {
+    return 'invalid_org_unit';
+  }
+  if (!rawOrgUnit && ORG_SCOPED_TIERS.includes(accessTier as AccessTier)) {
+    return 'org_unit_required';
+  }
+  return { accessTier: accessTier as AccessTier, orgUnit: rawOrgUnit || null };
+}
+
+/** Sends the error for a refusal the database raised, or rethrows anything else. */
+function sendAdminError(res: ServerResponse, error: unknown): void {
+  if (!(error instanceof AdminActionError)) {
+    throw error;
+  }
+  const status = error.code === 'account_not_found' ? 404
+    : ['email_taken', 'username_taken'].includes(error.code) ? 409
+    : ['not_admin', 'self_change_forbidden', 'target_is_developer', 'tier_not_assignable'].includes(error.code) ? 403
+    : 400;
+  sendJson(res, status, { error: error.code });
+}
+
+async function handleListAccounts(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireUserAdmin(req, res);
+  if (!account) {
+    return;
+  }
+  sendJson(res, 200, {
+    accounts: await store.listManagedAccounts(),
+    assignableTiers: ADMIN_ASSIGNABLE_TIERS,
+    self: account.userId,
+  });
+}
+
+async function handleCreateAccount(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireUserAdmin(req, res);
+  if (!account) {
+    return;
+  }
+  const body = await readJsonBody<Record<string, unknown>>(req);
+  if (!body) {
+    sendJson(res, 400, { error: 'invalid_request' });
+    return;
+  }
+
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  if (!EMAIL.test(email) || email.length > 254) {
+    sendJson(res, 400, { error: 'invalid_email' });
+    return;
+  }
+  const displayName = optionalText(body.displayName, 200);
+  if (displayName === null || displayName === 'invalid') {
+    sendJson(res, 400, { error: 'display_name_required' });
+    return;
+  }
+  // Same derivation as scripts/create-password-account.sh when none is given.
+  const requested = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+  const username = requested
+    || (email.split('@')[0] ?? '').toLowerCase().replace(/[^a-z0-9._-]/g, '-');
+  if (!TRINO_USERNAME.test(username) || RESERVED_USERNAMES.has(username)) {
+    sendJson(res, 400, { error: 'invalid_username' });
+    return;
+  }
+  const passwordError = passwordProblem(body.password);
+  if (passwordError) {
+    sendJson(res, 400, { error: passwordError });
+    return;
+  }
+  const grant = parseGrant(body);
+  if (typeof grant === 'string') {
+    sendJson(res, 400, { error: grant });
+    return;
+  }
+
+  const passwordHash = await hashPassword(body.password as string, config.passwordLogin.bcryptCost);
+  try {
+    const userId = await store.adminCreatePasswordAccount(
+      account.userId,
+      { email, displayName, username, ...grant },
+      passwordHash,
+    );
+    console.info(`[auth] admin ${account.userId} created account ${userId} at tier ${grant.accessTier}`);
+    sendJson(res, 201, { userId, username });
+  } catch (error) {
+    sendAdminError(res, error);
+  }
+}
+
+async function handleUpdateAccount(req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
+  const account = await requireUserAdmin(req, res);
+  if (!account) {
+    return;
+  }
+  if (!UUID.test(userId)) {
+    sendJson(res, 404, { error: 'account_not_found' });
+    return;
+  }
+  const body = await readJsonBody<Record<string, unknown>>(req);
+  if (!body || typeof body.isActive !== 'boolean') {
+    sendJson(res, 400, { error: 'invalid_request' });
+    return;
+  }
+  const grant = parseGrant(body);
+  if (typeof grant === 'string') {
+    sendJson(res, 400, { error: grant });
+    return;
+  }
+  try {
+    await store.adminUpdateAccount(account.userId, userId, grant.accessTier, grant.orgUnit, body.isActive);
+    console.info(`[auth] admin ${account.userId} updated account ${userId}`);
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendAdminError(res, error);
+  }
+}
+
+async function handleResetPassword(req: IncomingMessage, res: ServerResponse, userId: string): Promise<void> {
+  const account = await requireUserAdmin(req, res);
+  if (!account) {
+    return;
+  }
+  if (!UUID.test(userId)) {
+    sendJson(res, 404, { error: 'account_not_found' });
+    return;
+  }
+  const body = await readJsonBody<{ password?: unknown }>(req);
+  const passwordError = passwordProblem(body?.password);
+  if (passwordError) {
+    sendJson(res, 400, { error: passwordError });
+    return;
+  }
+  const passwordHash = await hashPassword(body!.password as string, config.passwordLogin.bcryptCost);
+  try {
+    await store.adminResetPassword(account.userId, userId, passwordHash);
+    console.info(`[auth] admin ${account.userId} reset the password of account ${userId}`);
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendAdminError(res, error);
+  }
+}
+
+async function handleListAdminEvents(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const account = await requireUserAdmin(req, res);
+  if (!account) {
+    return;
+  }
+  sendJson(res, 200, { events: await store.listAdminEvents() });
+}
+
 async function route(
   oidc: OidcProvider | null,
   req: IncomingMessage,
@@ -1259,6 +1461,39 @@ async function route(
     }
     if (action === 'reject' && req.method === 'POST') {
       await handleRejectRelease(req, res, releaseId);
+      return;
+    }
+    sendJson(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
+  if (url.pathname === '/auth/admin/users') {
+    if (req.method === 'GET') {
+      await handleListAccounts(req, res);
+      return;
+    }
+    if (req.method === 'POST') {
+      await handleCreateAccount(req, res);
+      return;
+    }
+    sendJson(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
+  if (url.pathname === '/auth/admin/events' && req.method === 'GET') {
+    await handleListAdminEvents(req, res);
+    return;
+  }
+
+  const adminUserMatch = url.pathname.match(/^\/auth\/admin\/users\/([^/]+)(\/password)?$/);
+  if (adminUserMatch && adminUserMatch[1]) {
+    const userId = adminUserMatch[1];
+    if (adminUserMatch[2] && req.method === 'POST') {
+      await handleResetPassword(req, res, userId);
+      return;
+    }
+    if (!adminUserMatch[2] && req.method === 'PUT') {
+      await handleUpdateAccount(req, res, userId);
       return;
     }
     sendJson(res, 405, { error: 'method_not_allowed' });

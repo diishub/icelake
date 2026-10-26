@@ -233,7 +233,7 @@ this deployment (kept every service loopback-only/SSH-tunnel-only instead)
 
 The initial checkout has no seeded sample tables or published dashboards. This
 empty state is shown honestly in the portal and must be changed in
-`portal/config.js` only after a real published report is acceptance-tested.
+`portal/public/config.json` only after a real published report is acceptance-tested.
 
 For a short Thai user handout, see
 [`docs/USER_GUIDE_TH.md`](docs/USER_GUIDE_TH.md).
@@ -273,7 +273,7 @@ Sign out of Superset and repeat queries as `analyst` and each viewer account.
 | Superset user | Trino group(s) | Allowed data access |
 |---|---|---|
 | `psu-admin` | `psu_admin` | All catalogs and operations |
-| `analyst` | `psu_analyst` | Read `curated` and `published`; write (`INSERT`/`UPDATE`/`DELETE`) `curated` only — `published` changes only through an approved release (`/publish.html`) |
+| `analyst` | `psu_analyst` | Read `curated` and `published`; write (`INSERT`/`UPDATE`/`DELETE`) `curated` only — `published` changes only through an approved release (`/publish`) |
 | viewer with `_ORG_UNIT=*` (`viewer` by default) | `psu_viewer`, `psu_viewer_exec` | Read all of `published`, unfiltered |
 | viewer with `_ORG_UNIT=eng`/`med`/... | `psu_viewer`, `psu_viewer_org_<unit>` | Read `published`, row-filtered to its org unit on any table listed in `config/opa/org_scoped_tables.json` |
 | value of `TRINO_INGESTION_USERNAME` | `psu_ingestion` | Dev-only table operations in `raw`, `curated`, and `documents` through Trino |
@@ -580,15 +580,15 @@ Signing in now changes what the portal shows, driven by the account's own
 `access_tier` (`identity.app_user.access_tier`, §4), not by anything the
 browser decides on its own:
 
-- **`viewer_exec` / `analyst`** are sent to `/reports.html` (a dedicated
-  page, `portal/reports.js` -- the same shape as `/upload.html` below) by
+- **`viewer_exec` / `analyst`** are sent to `/reports` (a dedicated
+  page, `portal/src/pages/reports.tsx` -- the same shape as `/upload` below) by
   every "see my reports" affordance on the homepage: the role-guidance
   panel's action button, the `#reports` teaser card, and each published
-  catalogue item's "เปิดรายงาน" link. `/reports.html` checks the account's
+  catalogue item's "เปิดรายงาน" link. `/reports` checks the account's
   own tier itself (403-equivalent client-side message for a signed-in
-  account without access, redirect to `/login?next=/reports.html` if signed
+  account without access, redirect to `/login?next=/reports` if signed
   out) and embeds a live Superset dashboard via a Superset guest token
-  (`GET /auth/embeds/<key>`, `<key>` from `portal/config.js`'s
+  (`GET /auth/embeds/<key>`, `<key>` from `portal/public/config.json`'s
   `embeddedDashboardKey`) instead of a second Superset login. The route is
   generic -- `<key>` is looked up in `SUPERSET_EMBED_DASHBOARDS`, never a
   hardcoded dashboard, so adding another dashboard later is a config change
@@ -596,13 +596,13 @@ browser decides on its own:
   underneath still runs as that account's own Trino identity -- the guest
   token carries `psu_username`, which `config/superset/bootstrap_database.py`'s
   `impersonate_user = True` turns into the same OPA-checked Trino query any
-  other client from that account would run. Today `portal/config.js` points
+  other client from that account would run. Today `portal/public/config.json` points
   at the ops dashboard from §6.11 as a working proof of the embedding
   pipeline itself; a `viewer_exec` account correctly sees it empty
   (`platform.ingest` is analyst/admin-only in `config/opa/trino.rego`, by
   design) until a `published`-schema dashboard exists for executives, which
   is separate, later content work, not a bug in this wiring.
-- **`steward`** gets a link to `/upload.html`, a small authenticated page for
+- **`steward`** gets a link to `/upload`, a small authenticated page for
   staging a `.csv`, `.pdf`, or `.docx` file. The upload lands in RustFS under
   `staging/uploads/<org_unit>/<upload_id>/...` and is logged in
   `identity.upload_event` with `status = 'pending_review'` -- it does **not**
@@ -642,7 +642,7 @@ for a `<key>` not in that map answers 404.
 exists): append its `key=slug` to `SUPERSET_EMBED_DASHBOARD_SLUGS`, recreate
 `superset-init`, append the newly printed `key=uuid` to
 `SUPERSET_EMBED_DASHBOARDS`, recreate `psu-auth`, then point
-`portal/config.js`'s `embeddedDashboardKey` (or a future per-role/per-page
+`portal/public/config.json`'s `embeddedDashboardKey` (or a future per-role/per-page
 key) at it -- no route or backend code changes either time.
 
 Uploads need no extra setup beyond what `RUSTFS_ACCESS_KEY`/`RUSTFS_SECRET_KEY`

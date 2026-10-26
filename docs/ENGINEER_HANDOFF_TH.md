@@ -25,7 +25,7 @@
 ยังไม่ได้ส่งมอบ:
 
 - ไม่มีตารางข้อมูลจริง, NiFi ingestion flow, dataset หรือ dashboard จริง
-- `portal/config.js` ยังประกาศว่า published report ไม่พร้อม
+- `portal/public/config.json` ยังประกาศว่า published report ไม่พร้อม
 - ไม่มี named pilot accounts 10–20 คน; สามบัญชีปัจจุบันเป็น shared dev personas
 - ไม่มี SSO, external reverse proxy, production TLS, HA หรือ production audit
 - ไม่มี publisher role ที่แยกจาก admin และยังไม่มี backup/restore drill ที่ผ่านจริง
@@ -193,7 +193,7 @@ documents ---------> RustFS + rebuildable Qdrant index
 5. สร้างเส้นทาง `raw -> curated -> published`, ตรวจ row count/null/duplicate และ
    ให้ Data Owner ยืนยันนิยาม
 6. สร้าง Superset dashboard หนึ่งหน้า แล้วทดสอบ admin/analyst/viewer/direct URL
-7. เปลี่ยน `publishedReportsReady` ใน `portal/config.js` เป็น `true` หลัง
+7. เปลี่ยน `publishedReportsReady` ใน `portal/public/config.json` เป็น `true` หลัง
    dashboard ผ่าน acceptance เท่านั้น
 8. ก่อน Pilot ให้ provision named local accounts 10–20 คน แยกจาก shared dev
    personas พร้อมทดสอบ disable/logout; งานนี้ยังไม่ต้องรอ SSO

@@ -52,7 +52,7 @@ NiFi หรือ schema
 - สร้างรายงาน Superset หนึ่งหน้า มีตัวเลขหลักไม่เกินห้าตัว
 - แสดงเจ้าของข้อมูล วันที่อัปเดต และข้อจำกัดการตีความ
 - ทดสอบ `viewer`, `analyst`, ผู้ไม่มีสิทธิ์ และ direct URL
-- เปลี่ยน `publishedReportsReady` ใน `portal/config.js` เป็น `true` เมื่อการ
+- เปลี่ยน `publishedReportsReady` ใน `portal/public/config.json` เป็น `true` เมื่อการ
   ทดสอบผ่านแล้วเท่านั้น
 
 ### วัน 5 — ทดลองกับคนจริงและแก้จุดหลง

@@ -31,7 +31,79 @@ export interface AccountIdentity {
   email?: string | undefined;
 }
 
-export type AccessTier = 'none' | 'viewer' | 'viewer_exec' | 'analyst' | 'steward' | 'developer';
+export type AccessTier = 'none' | 'viewer' | 'viewer_exec' | 'analyst' | 'steward' | 'developer' | 'admin';
+
+/** The tiers an admin may grant from the portal -- config/platform/022-admin-tier.sql enforces the same list. */
+export const ADMIN_ASSIGNABLE_TIERS: readonly AccessTier[] = [
+  'none', 'viewer', 'viewer_exec', 'analyst', 'steward', 'admin',
+];
+
+/** An account as the admin page lists it. Never a password hash. */
+export interface ManagedAccount {
+  userId: string;
+  email: string | null;
+  username: string | null;
+  displayName: string | null;
+  accessTier: AccessTier;
+  orgUnit: string | null;
+  isActive: boolean;
+  hasPassword: boolean;
+  hasPsuPassport: boolean;
+  firstSeenAt: string | null;
+  lastLoginAt: string | null;
+}
+
+export interface AdminEvent {
+  eventId: string;
+  occurredAt: string;
+  action: 'account_created' | 'account_updated' | 'password_reset';
+  actorName: string | null;
+  targetName: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface NewPasswordAccount {
+  email: string;
+  displayName: string;
+  username: string;
+  accessTier: AccessTier;
+  orgUnit: string | null;
+}
+
+/**
+ * A refusal from one of the admin_* functions, or a constraint the change ran
+ * into, carried as the API error code the admin page translates.
+ */
+export class AdminActionError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+const ADMIN_FUNCTION_ERRORS = new Set([
+  'not_admin', 'tier_not_assignable', 'self_change_forbidden', 'target_is_developer',
+  'account_not_found', 'not_password_account', 'invalid_password_hash',
+]);
+
+/** Maps what PostgreSQL raised to an AdminActionError, or rethrows what it does not recognise. */
+function toAdminError(error: unknown): never {
+  const pgError = error as { code?: string; message?: string; constraint?: string };
+  if (pgError.code === 'P0001' && pgError.message && ADMIN_FUNCTION_ERRORS.has(pgError.message)) {
+    throw new AdminActionError(pgError.message);
+  }
+  if (pgError.code === '23505') {
+    if (pgError.constraint === 'app_user_email_unique_idx') {
+      throw new AdminActionError('email_taken');
+    }
+    if (pgError.constraint === 'app_user_psu_username_key') {
+      throw new AdminActionError('username_taken');
+    }
+  }
+  if (pgError.code === '23514' && pgError.constraint === 'app_user_viewer_is_scoped') {
+    throw new AdminActionError('org_unit_required');
+  }
+  throw error;
+}
 
 export interface Account {
   userId: string;
@@ -46,7 +118,7 @@ export interface Account {
   departmentNameTh: string | null;
   majorNameTh: string | null;
   isActive: boolean;
-  /** What this account may read in Trino, granted by an administrator -- see config/platform/008-access-grants.sql and 014-steward-developer-tiers.sql. Never set by this service. */
+  /** What this account may read in Trino, granted by an administrator -- see config/platform/008-access-grants.sql, 014-steward-developer-tiers.sql and 022-admin-tier.sql. This service changes it only through the admin_* functions, on an admin's behalf. */
   accessTier: AccessTier;
   orgUnit: string | null;
 }
@@ -238,6 +310,104 @@ export class IdentityStore {
 
   async purgeExpired(): Promise<void> {
     await this.pool.query('SELECT identity.purge_expired()');
+  }
+
+  // -------------------------------------------------------------------------
+  // Account administration -- config/platform/022-admin-tier.sql
+  // -------------------------------------------------------------------------
+  //
+  // Reads go straight to the table (identity_app has had SELECT since 007).
+  // Every write goes through a SECURITY DEFINER function that re-checks the
+  // actor is an admin; identity_app still cannot UPDATE access_tier or write
+  // password_hash itself.
+
+  async listManagedAccounts(): Promise<ManagedAccount[]> {
+    const result = await this.pool.query(
+      `SELECT user_id, email, psu_username, display_name, access_tier, org_unit, is_active,
+              password_hash IS NOT NULL AS has_password, subject IS NOT NULL AS has_psu_passport,
+              first_seen_at, last_login_at
+         FROM identity.app_user
+        ORDER BY is_active DESC, lower(coalesce(display_name, email, psu_username))
+        LIMIT 1000`,
+    );
+    return result.rows.map((row) => ({
+      userId: String(row.user_id),
+      email: row.email ?? null,
+      username: row.psu_username ?? null,
+      displayName: row.display_name ?? null,
+      accessTier: row.access_tier as AccessTier,
+      orgUnit: row.org_unit ?? null,
+      isActive: Boolean(row.is_active),
+      hasPassword: Boolean(row.has_password),
+      hasPsuPassport: Boolean(row.has_psu_passport),
+      firstSeenAt: isoOrNull(row.first_seen_at),
+      lastLoginAt: isoOrNull(row.last_login_at),
+    }));
+  }
+
+  async listAdminEvents(limit = 50): Promise<AdminEvent[]> {
+    const result = await this.pool.query(
+      `SELECT e.event_id, e.occurred_at, e.action, e.detail,
+              coalesce(a.display_name, a.email) AS actor_name,
+              coalesce(t.display_name, t.email, t.psu_username) AS target_name
+         FROM identity.admin_event AS e
+         LEFT JOIN identity.app_user AS a ON a.user_id = e.actor_user_id
+         LEFT JOIN identity.app_user AS t ON t.user_id = e.target_user_id
+        ORDER BY e.occurred_at DESC, e.event_id DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      eventId: String(row.event_id),
+      occurredAt: isoOrNull(row.occurred_at) ?? '',
+      action: row.action,
+      actorName: row.actor_name ?? null,
+      targetName: row.target_name ?? null,
+      detail: (row.detail as Record<string, unknown>) ?? {},
+    }));
+  }
+
+  async adminCreatePasswordAccount(
+    actorUserId: string,
+    account: NewPasswordAccount,
+    passwordHash: string,
+  ): Promise<string> {
+    try {
+      const result = await this.pool.query(
+        'SELECT identity.admin_create_password_account($1, $2, $3, $4, $5, $6, $7) AS user_id',
+        [actorUserId, account.email, account.displayName, account.username, passwordHash,
+          account.accessTier, account.orgUnit],
+      );
+      return String(result.rows[0]?.user_id);
+    } catch (error) {
+      toAdminError(error);
+    }
+  }
+
+  async adminUpdateAccount(
+    actorUserId: string,
+    targetUserId: string,
+    accessTier: AccessTier,
+    orgUnit: string | null,
+    isActive: boolean,
+  ): Promise<void> {
+    try {
+      await this.pool.query('SELECT identity.admin_update_account($1, $2, $3, $4, $5)', [
+        actorUserId, targetUserId, accessTier, orgUnit, isActive,
+      ]);
+    } catch (error) {
+      toAdminError(error);
+    }
+  }
+
+  async adminResetPassword(actorUserId: string, targetUserId: string, passwordHash: string): Promise<void> {
+    try {
+      await this.pool.query('SELECT identity.admin_reset_password($1, $2, $3)', [
+        actorUserId, targetUserId, passwordHash,
+      ]);
+    } catch (error) {
+      toAdminError(error);
+    }
   }
 
   /**
