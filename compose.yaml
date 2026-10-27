@@ -288,7 +288,10 @@ services:
     command:
       - -ec
       - |
-        mkdir -p /var/trino/data/tls
+        # The hive catalog's file metastore root (local.location in
+        # config/trino/catalog/hive.properties) must exist before Trino loads
+        # the catalog; created here as the trino user so it is writable.
+        mkdir -p /var/trino/data/tls /var/trino/data/hive-metastore
         if [ -f /var/trino/data/tls/trino.p12 ]; then
           echo "Trino keystore already present"
           exit 0
