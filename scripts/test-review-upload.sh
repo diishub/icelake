@@ -60,14 +60,15 @@ CSV
 # 2. Provision Steward Account
 steward_out="$(MSYS_NO_PATHCONV=1 ./scripts/create-password-account.sh "${steward_email}" "Synthetic Steward" 2>&1)"
 steward_pass="$(printf '%s\n' "${steward_out}" | sed -n 's/^ *//; /^[A-Za-z0-9_-]\{16,\}$/p' | tail -1)"
-run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'steward', org_unit = '${test_org_unit}' WHERE email = '${steward_email}'" >/dev/null
+# The uploader is a viewer, naming the org unit per upload (024-three-tiers.sql).
+run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'viewer' WHERE email = '${steward_email}'" >/dev/null
 
 # 3. Steward login and upload
 curl -s -o /dev/null -c "${steward_jar}" -X POST "${portal_base}/auth/password/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${steward_email}\",\"password\":\"${steward_pass}\"}"
 
-upload_res="$(curl -s -w '\n%{http_code}' -b "${steward_jar}" -F "file=@${csv_file}" "${portal_base}/auth/uploads")"
+upload_res="$(curl -s -w '\n%{http_code}' -b "${steward_jar}" -F "orgUnit=${test_org_unit}" -F "file=@${csv_file}" "${portal_base}/auth/uploads")"
 upload_status="$(printf '%s' "${upload_res}" | tail -1)"
 upload_body="$(printf '%s' "${upload_res}" | sed '$d')"
 

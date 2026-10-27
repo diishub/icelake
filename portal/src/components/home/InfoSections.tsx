@@ -9,7 +9,6 @@ import type { CatalogState } from './useCatalog';
 const ROLES = [
   { role: 'viewer', href: '/reports' },
   { role: 'analyst', href: '/publish' },
-  { role: 'steward', href: '/upload' },
   { role: 'operator', href: '/admin' },
 ] as const;
 

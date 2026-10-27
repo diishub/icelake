@@ -167,11 +167,13 @@ Generated password (shown once, not stored by this script):
 
 Relay it to ${email} over a channel your unit already trusts. The account
 starts at access_tier 'none' -- no data access -- until an administrator
-grants one. Tiers: viewer and steward need org_unit; viewer_exec and analyst
-read/write without an org boundary; developer is full platform access, the
-same as this deployment's own admin identity -- reserve it for your own team.
+grants one, on the portal's admin page or as below. Tiers: viewer (submits
+files and reads published), analyst (reviews submissions and publishes), and
+admin -- full platform access, the same as this deployment's own admin
+identity, and manages accounts on the portal; grant it with
+scripts/create-admin-account.sh.
 
-    UPDATE identity.app_user SET access_tier = 'viewer', org_unit = '<unit>'
+    UPDATE identity.app_user SET access_tier = 'viewer'
       WHERE lower(email) = lower('${email}');
     scripts/publish-trino-groups.sh
 MSG

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useI18n } from '@/i18n';
+import { ApiError } from '@/lib/api';
 import type { MessageKey } from '@/i18n';
 import { knownTier } from '@/lib/tiers';
 import type { AccessTier } from '@/lib/tiers';
@@ -38,9 +39,22 @@ export interface AdminEvent {
 export interface Alert {
   message: string;
   kind: 'error' | 'success';
+  /** The psu-auth error code, shown small for the platform team when the message is not specific to it. */
+  code?: string;
 }
 
-export const ORG_SCOPED_TIERS: readonly string[] = ['viewer', 'steward'];
+/**
+ * The sentence for an error this page has no sentence of its own for, by what
+ * kind of failure it is. A 404/405 means psu-auth does not have the route --
+ * in practice a portal newer than the running auth service.
+ */
+function errorClass(code: string, status: number | undefined): 'network' | 'unavailable' | 'server' | 'generic' {
+  if (code === 'network_error') return 'network';
+  if (status === 404 || status === 405 || code === 'not_found' || code === 'method_not_allowed') return 'unavailable';
+  if ((status !== undefined && status >= 500) || code === 'invalid_response') return 'server';
+  return 'generic';
+}
+
 export const PASSWORD_MIN_LENGTH = 12;
 
 export function passwordInputProblem(password: string, confirm: string): string | null {
@@ -55,11 +69,18 @@ export function useAdminText() {
 
   const tierLabel = useCallback((tier: unknown) => tx(`tier.${knownTier(tier)}`), [tx]);
 
-  // A psu-auth error code this page has a sentence for (admin.error.<code>),
-  // or the generic sentence that carries the code.
-  const errorMessage = useCallback(
-    (code: string | undefined) => tx(`admin.error.${code ?? 'unknown'}`, { code: code || 'unknown' }, 'admin.error.generic'),
-    [tx],
+  // An input problem or a failed api() call as an alert: the sentence this
+  // page has for the code (admin.error.<code>), or a sentence for the kind of
+  // failure plus the code as a reference.
+  const errorAlert = useCallback(
+    (error: unknown): Alert => {
+      const code = typeof error === 'string' ? error : error instanceof ApiError ? error.code : 'unknown';
+      const status = error instanceof ApiError ? error.status : undefined;
+      const specific = tx(`admin.error.${code}`);
+      if (specific) return { message: specific, kind: 'error' };
+      return { message: t(`admin.error.${errorClass(code, status)}`), kind: 'error', code };
+    },
+    [t, tx],
   );
 
   const formatDate = useCallback(
@@ -80,14 +101,19 @@ export function useAdminText() {
     [language],
   );
 
-  return { t, tx, tierLabel, errorMessage, formatDate };
+  return { t, tx, tierLabel, errorAlert, formatDate };
 }
 
 export function FeedbackAlert({ alert }: { alert: Alert | null }) {
+  const { t } = useI18n();
   if (!alert) return null;
   return (
-    <div className={`modal-feedback-alert ${alert.kind === 'error' ? 'alert-error' : 'alert-success'}`}>
+    <div
+      className={`modal-feedback-alert ${alert.kind === 'error' ? 'alert-error' : 'alert-success'}`}
+      role={alert.kind === 'error' ? 'alert' : 'status'}
+    >
       {alert.message}
+      {alert.code && <span className="alert-reference">{t('admin.error.reference', { code: alert.code })}</span>}
     </div>
   );
 }

@@ -33,7 +33,9 @@ BEGIN
   -- A scoped viewer with no scope reads everything rather than nothing: the
   -- row filter is produced per org unit, so an empty set produces no filter.
   -- The policy now denies that combination; this stops it being recorded.
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'app_user_viewer_is_scoped') THEN
+  -- Not once 024-three-tiers.sql has applied: a viewer has no org unit there.
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'app_user_viewer_is_scoped')
+     AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'app_user_tier_in_use') THEN
     ALTER TABLE identity.app_user
       ADD CONSTRAINT app_user_viewer_is_scoped
       CHECK (access_tier <> 'viewer' OR org_unit IS NOT NULL);

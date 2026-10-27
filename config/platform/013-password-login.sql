@@ -74,7 +74,13 @@ ALTER TABLE identity.login_event
     'directory_unavailable',
     'account_disabled',
     'invalid_credentials',
-    'rate_limited'
+    'rate_limited',
+    -- Superset sign-in with a portal password, through psu-auth's login
+    -- bridge (services/auth/src/server.ts), and its refusal of a tier that
+    -- has no Superset access. Listed here rather than in a later migration
+    -- because this file rebuilds the constraint on every start.
+    'superset_signed_in',
+    'tier_not_permitted'
   ));
 
 -- ---------------------------------------------------------------------------

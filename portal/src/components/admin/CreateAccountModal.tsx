@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { PasswordInput } from '@/components/PasswordInput';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { AccessTier } from '@/lib/tiers';
-import { AdminModal, ORG_SCOPED_TIERS, passwordInputProblem, TierOptions, useAdminText } from './shared';
+import { AdminModal, passwordInputProblem, TierOptions, useAdminText } from './shared';
 import type { Alert } from './shared';
 
 interface Props {
@@ -19,12 +19,11 @@ interface Props {
  * gone when the modal unmounts.
  */
 export function CreateAccountModal({ assignableTiers, onClose, onDone }: Props) {
-  const { t, errorMessage } = useAdminText();
+  const { t, errorAlert } = useAdminText();
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
-  const [tier, setTier] = useState<string>(assignableTiers.includes('none') ? 'none' : (assignableTiers[0] ?? 'none'));
-  const [orgUnit, setOrgUnit] = useState('');
+  const [tier, setTier] = useState<string>(assignableTiers[0] ?? 'viewer');
   const [alert, setAlert] = useState<Alert | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,7 +33,7 @@ export function CreateAccountModal({ assignableTiers, onClose, onDone }: Props) 
     const password = String(form.get('password') ?? '');
     const problem = passwordInputProblem(password, String(form.get('passwordConfirm') ?? ''));
     if (problem) {
-      setAlert({ message: errorMessage(problem), kind: 'error' });
+      setAlert(errorAlert(problem));
       return;
     }
     setSubmitting(true);
@@ -45,11 +44,10 @@ export function CreateAccountModal({ assignableTiers, onClose, onDone }: Props) 
         username: username.trim(),
         password,
         accessTier: tier,
-        orgUnit: orgUnit.trim(),
       });
       onDone(t('admin.created', { username: created.username ?? '' }));
     } catch (error) {
-      setAlert({ message: errorMessage(error instanceof ApiError ? error.code : undefined), kind: 'error' });
+      setAlert(errorAlert(error));
       setSubmitting(false);
     }
   }
@@ -135,21 +133,6 @@ export function CreateAccountModal({ assignableTiers, onClose, onDone }: Props) 
           <select id="create-tier" className="publish-input" value={tier} onChange={(event) => setTier(event.target.value)}>
             <TierOptions tiers={assignableTiers} />
           </select>
-        </div>
-        <div className="upload-input-group">
-          <label htmlFor="create-org-unit">{t('admin.fieldOrgUnit')}</label>
-          <input
-            id="create-org-unit"
-            className="publish-input"
-            type="text"
-            maxLength={64}
-            pattern="^[a-z0-9_-]{1,64}$"
-            placeholder="eng"
-            required={ORG_SCOPED_TIERS.includes(tier)}
-            value={orgUnit}
-            onChange={(event) => setOrgUnit(event.target.value)}
-          />
-          <p className="input-hint-text">{t('admin.fieldOrgUnitHint')}</p>
         </div>
       </div>
     </AdminModal>

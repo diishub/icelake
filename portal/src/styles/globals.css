@@ -809,6 +809,14 @@ pre {
   color: var(--positive);
 }
 
+.alert-reference {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
 .login-note {
   color: var(--muted-foreground);
   font-size: 0.875rem;

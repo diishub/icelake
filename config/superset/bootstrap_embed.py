@@ -34,9 +34,9 @@ VIEW_MENU_NAME = "SecurityRestApi"
 SERVICE_USERNAME = os.environ.get("SUPERSET_EMBED_SERVICE_USERNAME", "psu-embed")
 SERVICE_PASSWORD = os.environ["SUPERSET_EMBED_SERVICE_PASSWORD"]
 ALLOWED_ORIGIN = os.environ.get("AUTH_PUBLIC_ORIGIN", "http://localhost:8085")
-DASHBOARD_SLUGS_RAW = os.environ.get(
-    "SUPERSET_EMBED_DASHBOARD_SLUGS", "ops=psu-platform-operations"
-)
+# Empty is allowed: the guest-token account is still reconciled, and nothing is
+# embedded until a dashboard is named here.
+DASHBOARD_SLUGS_RAW = os.environ.get("SUPERSET_EMBED_DASHBOARD_SLUGS", "")
 
 
 def _parse_dashboard_slugs(raw: str) -> dict[str, str]:
@@ -51,8 +51,6 @@ def _parse_dashboard_slugs(raw: str) -> dict[str, str]:
             )
         key, slug = entry.split("=", 1)
         pairs[key.strip()] = slug.strip()
-    if not pairs:
-        raise RuntimeError("SUPERSET_EMBED_DASHBOARD_SLUGS named no dashboards")
     return pairs
 
 
@@ -131,6 +129,8 @@ def main() -> None:
 
         if results:
             print(f"SUPERSET_EMBED_DASHBOARDS={','.join(results)}")
+        else:
+            print("no dashboards embedded (SUPERSET_EMBED_DASHBOARD_SLUGS is empty)")
 
 
 if __name__ == "__main__":

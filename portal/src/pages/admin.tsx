@@ -1,7 +1,7 @@
 /*
- * Platform-team page, for admin and developer accounts.
+ * Platform-team page, for admin accounts only.
  *
- * Admins also get account administration: list accounts, create password
+ * Account administration: list accounts, create password
  * accounts, grant tiers, switch accounts off and reset passwords. Every tool
  * linked here has its own sign-in, and the commands listed on the page run
  * only on the host.

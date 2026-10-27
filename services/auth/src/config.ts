@@ -147,6 +147,17 @@ export interface AppConfig {
     username: string;
     password: string;
   } | undefined;
+  /**
+   * Lets Superset sign a portal analyst or admin in with their portal email
+   * and password: Superset asks this service, on a port of its own that is
+   * reachable only inside the compose network, and never sees a hash.
+   * Undefined when SUPERSET_LOGIN_BRIDGE_SECRET is unset, which leaves
+   * Superset with its own accounts only. See config/superset/psu_security_manager.py.
+   */
+  supersetLoginBridge: {
+    port: number;
+    secret: string;
+  } | undefined;
 }
 
 export function readConfig(): AppConfig {
@@ -215,7 +226,19 @@ export function readConfig(): AppConfig {
     rustfs: readRustfsConfig(),
     trino: readTrinoConfig(),
     publisher: readPublisherConfig(),
+    supersetLoginBridge: readSupersetLoginBridgeConfig(),
   };
+}
+
+function readSupersetLoginBridgeConfig(): AppConfig['supersetLoginBridge'] {
+  const secret = optional('SUPERSET_LOGIN_BRIDGE_SECRET');
+  if (!secret) {
+    return undefined;
+  }
+  if (secret.length < 32) {
+    throw new Error('SUPERSET_LOGIN_BRIDGE_SECRET must be at least 32 characters');
+  }
+  return { port: number('SUPERSET_LOGIN_BRIDGE_PORT', 8089), secret };
 }
 
 /**

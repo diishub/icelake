@@ -16,6 +16,7 @@
  *     (scripts/create-password-account.sh) or by an 'admin' account on the
  *     portal's admin page (/auth/admin/*), never by self-registration.
  */
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -180,13 +181,33 @@ async function passwordLogin(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
+  const check = await checkPasswordCredentials(email, password);
+  if (sendCredentialRefusal(res, check)) {
+    return;
+  }
+  const account = await store.recordPasswordLogin(check.account.userId);
+  await establishSession(res, account.userId);
+  await store.recordLogin(account.userId, 'succeeded', 'signed_in');
+  sendJson(res, 200, { ok: true, next, user: publicProfile(account) });
+}
+
+type CredentialCheck =
+  | { kind: 'rate_limited'; retryAfterSeconds: number }
+  | { kind: 'invalid' }
+  | { kind: 'disabled' }
+  | { kind: 'ok'; account: Account };
+
+/**
+ * What both password sign-in paths -- the portal's and Superset's -- check,
+ * in the same order and against the same rate limiter, so a guess spent on
+ * one counts against the other. Every refusal is recorded here.
+ */
+async function checkPasswordCredentials(email: string, password: string): Promise<CredentialCheck> {
   const limiterKey = email.toLowerCase();
   const limit = rateLimiter.check(limiterKey);
   if (!limit.allowed) {
     await store.recordLogin(null, 'denied', 'rate_limited');
-    res.setHeader('Retry-After', String(limit.retryAfterSeconds));
-    sendJson(res, 429, { error: 'too_many_attempts', retryAfterSeconds: limit.retryAfterSeconds });
-    return;
+    return { kind: 'rate_limited', retryAfterSeconds: limit.retryAfterSeconds };
   }
 
   const found = await store.findByEmailForPasswordLogin(email);
@@ -195,22 +216,102 @@ async function passwordLogin(req: IncomingMessage, res: ServerResponse): Promise
   if (!found || !passwordMatches) {
     rateLimiter.recordFailure(limiterKey);
     await store.recordLogin(found?.account.userId ?? null, 'denied', 'invalid_credentials');
-    sendJson(res, 401, { error: 'invalid_credentials' });
-    return;
+    return { kind: 'invalid' };
   }
 
   if (!found.account.isActive) {
     rateLimiter.recordFailure(limiterKey);
     await store.recordLogin(found.account.userId, 'denied', 'account_disabled');
-    sendJson(res, 403, { error: 'account_disabled' });
-    return;
+    return { kind: 'disabled' };
   }
 
   rateLimiter.clear(limiterKey);
-  const account = await store.recordPasswordLogin(found.account.userId);
-  await establishSession(res, account.userId);
-  await store.recordLogin(account.userId, 'succeeded', 'signed_in');
-  sendJson(res, 200, { ok: true, next, user: publicProfile(account) });
+  return { kind: 'ok', account: found.account };
+}
+
+/** Sends the response for a refused check; false (nothing sent) when it passed. */
+function sendCredentialRefusal(
+  res: ServerResponse,
+  check: CredentialCheck,
+): check is Exclude<CredentialCheck, { kind: 'ok' }> {
+  switch (check.kind) {
+    case 'rate_limited':
+      res.setHeader('Retry-After', String(check.retryAfterSeconds));
+      sendJson(res, 429, { error: 'too_many_attempts', retryAfterSeconds: check.retryAfterSeconds });
+      return true;
+    case 'invalid':
+      sendJson(res, 401, { error: 'invalid_credentials' });
+      return true;
+    case 'disabled':
+      sendJson(res, 403, { error: 'account_disabled' });
+      return true;
+    default:
+      return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Superset sign-in with a portal password
+// ---------------------------------------------------------------------------
+//
+// Until PSU Passport is switched on, Superset has its own user table. Rather
+// than give every analyst a second password, Superset's security manager
+// (config/superset/psu_security_manager.py) sends the email and password it
+// was given here and gets back the name to create the Superset account under
+// -- the psu_username Trino impersonates -- and the tier, which it maps to a
+// Superset role on every sign-in. The hash never leaves this service.
+//
+// This answers on its own port (SUPERSET_LOGIN_BRIDGE_PORT), which compose
+// does not publish and nginx does not proxy, and only to a caller presenting
+// SUPERSET_LOGIN_BRIDGE_SECRET. Viewers have no Superset access: their
+// reports are embedded in the portal.
+
+const SUPERSET_LOGIN_TIERS: readonly AccessTier[] = ['analyst', 'admin'];
+const SUPERSET_LOGIN_PATH = '/internal/superset/verify-password';
+
+/** Constant-time comparison of the presented bearer token with the configured secret. */
+function bridgeCallerAuthorized(req: IncomingMessage, secret: string): boolean {
+  const header = req.headers.authorization ?? '';
+  const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
+  if (!presented) {
+    return false;
+  }
+  // Hashing first gives both sides the same length, which timingSafeEqual needs.
+  const expected = createHash('sha256').update(secret).digest();
+  const actual = createHash('sha256').update(presented).digest();
+  return timingSafeEqual(expected, actual);
+}
+
+async function supersetVerifyPassword(req: IncomingMessage, res: ServerResponse, secret: string): Promise<void> {
+  if (!bridgeCallerAuthorized(req, secret)) {
+    sendJson(res, 401, { error: 'not_authorized' });
+    return;
+  }
+  const body = await readJsonBody<PasswordLoginBody>(req);
+  const email = typeof body?.email === 'string' ? body.email.trim() : '';
+  const password = typeof body?.password === 'string' ? body.password : '';
+  if (!email || !password) {
+    sendJson(res, 400, { error: 'invalid_request' });
+    return;
+  }
+
+  const check = await checkPasswordCredentials(email, password);
+  if (sendCredentialRefusal(res, check)) {
+    return;
+  }
+  const { account } = check;
+  if (!SUPERSET_LOGIN_TIERS.includes(account.accessTier) || !account.username) {
+    await store.recordLogin(account.userId, 'denied', 'tier_not_permitted');
+    sendJson(res, 403, { error: 'tier_not_permitted' });
+    return;
+  }
+  await store.recordPasswordLogin(account.userId);
+  await store.recordLogin(account.userId, 'succeeded', 'superset_signed_in');
+  sendJson(res, 200, {
+    username: account.username,
+    displayName: account.displayName,
+    accessTier: account.accessTier,
+  });
 }
 
 /** Reads the session cookie and returns the live account, or null if signed out. */
@@ -220,10 +321,10 @@ async function requireAccount(cookies: Map<string, string>): Promise<Account | n
   return account && account.isActive ? account : null;
 }
 
-// 'admin' reads everything a developer does (022-admin-tier.sql), so it is
-// let in wherever 'developer' is.
-const EMBED_ALLOWED_TIERS: readonly AccessTier[] = ['viewer_exec', 'analyst', 'developer', 'admin'];
-const REVIEW_ALLOWED_TIERS: readonly AccessTier[] = ['analyst', 'developer', 'admin'];
+// Three tiers (config/platform/024-three-tiers.sql): viewer, analyst and
+// admin, the one full-access tier.
+const EMBED_ALLOWED_TIERS: readonly AccessTier[] = ['viewer', 'analyst', 'admin'];
+const REVIEW_ALLOWED_TIERS: readonly AccessTier[] = ['analyst', 'admin'];
 
 /**
  * `key` is the portal-facing dashboard name (e.g. "ops") from the URL, not a
@@ -310,11 +411,15 @@ function safeObjectFileName(originalName: string, fileKind: 'csv' | 'pdf' | 'doc
 }
 
 const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
+// Who submits files: viewers (the old steward's page), and admins.
+const UPLOAD_TIERS: readonly AccessTier[] = ['viewer', 'admin'];
 
 interface ParsedUpload {
   filename: string;
   buffer: Buffer;
   note: string | null;
+  /** As sent; handleUpload validates it. */
+  orgUnit: string | null;
 }
 
 function parseSingleFileUpload(req: IncomingMessage): Promise<ParsedUpload | 'too_large' | null> {
@@ -338,12 +443,15 @@ function parseSingleFileUpload(req: IncomingMessage): Promise<ParsedUpload | 'to
 
     let result: ParsedUpload | null = null;
     let note: string | null = null;
+    let orgUnit: string | null = null;
     let tooLarge = false;
     let filePromise: Promise<void> | null = null;
 
     bb.on('field', (name, val) => {
       if (name === 'note' && typeof val === 'string') {
         note = val.trim().slice(0, 1000);
+      } else if (name === 'orgUnit' && typeof val === 'string') {
+        orgUnit = val.trim().toLowerCase();
       }
     });
 
@@ -356,7 +464,7 @@ function parseSingleFileUpload(req: IncomingMessage): Promise<ParsedUpload | 'to
         });
         stream.on('close', () => {
           if (!tooLarge) {
-            result = { filename: displayFilename(info.filename), buffer: Buffer.concat(chunks), note: null };
+            result = { filename: displayFilename(info.filename), buffer: Buffer.concat(chunks), note: null, orgUnit: null };
           }
           resFile();
         });
@@ -368,8 +476,9 @@ function parseSingleFileUpload(req: IncomingMessage): Promise<ParsedUpload | 'to
       if (filePromise) {
         await filePromise;
       }
-      if (result && note) {
+      if (result) {
         result.note = note;
+        result.orgUnit = orgUnit;
       }
       resolve(tooLarge ? 'too_large' : result);
     };
@@ -389,19 +498,12 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
     sendJson(res, 401, { error: 'not_authenticated' });
     return;
   }
-  if (account.accessTier !== 'steward') {
+  if (!UPLOAD_TIERS.includes(account.accessTier)) {
     sendJson(res, 403, { error: 'tier_not_permitted' });
     return;
   }
   if (!config.rustfs) {
     sendJson(res, 503, { error: 'uploads_not_configured' });
-    return;
-  }
-  if (!account.orgUnit) {
-    // Should not happen: app_user_viewer_is_scoped requires org_unit for a
-    // steward-tier account.
-    console.error('[auth] upload attempted by steward account with no org_unit', account.userId);
-    sendJson(res, 500, { error: 'internal_error' });
     return;
   }
 
@@ -421,6 +523,14 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
     sendJson(res, 400, { error: 'no_file' });
     return;
   }
+  // The submitter names the unit the file belongs to; accounts carry none
+  // (024-three-tiers.sql). It becomes part of the object key and, later, of a
+  // Trino table name, so it is held to the same shape as everywhere else.
+  const orgUnit = parsed.orgUnit;
+  if (!orgUnit || !ORG_UNIT.test(orgUnit)) {
+    sendJson(res, 400, { error: 'invalid_org_unit' });
+    return;
+  }
   const lowerFilename = parsed.filename.toLowerCase();
   const fileKind: 'csv' | 'pdf' | 'docx' | null = lowerFilename.endsWith('.csv')
     ? 'csv'
@@ -438,7 +548,7 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
     const uploadId = crypto.randomUUID();
     const staged = await putStagedUpload(
       config.rustfs,
-      account.orgUnit,
+      orgUnit,
       uploadId,
       safeObjectFileName(parsed.filename, fileKind),
       parsed.buffer,
@@ -456,7 +566,7 @@ async function handleUpload(req: IncomingMessage, res: ServerResponse): Promise<
     await store.recordUpload(
       uploadId,
       account.userId,
-      account.orgUnit,
+      orgUnit,
       staged.objectKey,
       parsed.filename,
       staged.sizeBytes,
@@ -478,7 +588,7 @@ async function handleListUploads(req: IncomingMessage, res: ServerResponse): Pro
     sendJson(res, 401, { error: 'not_authenticated' });
     return;
   }
-  if (account.accessTier !== 'steward') {
+  if (!UPLOAD_TIERS.includes(account.accessTier)) {
     sendJson(res, 403, { error: 'tier_not_permitted' });
     return;
   }
@@ -822,47 +932,37 @@ async function handleRejectReview(
 }
 
 // ---------------------------------------------------------------------------
-// Dataset releases: curated -> published, with a data owner's approval
+// Dataset releases: curated -> published
 // ---------------------------------------------------------------------------
 //
-// An analyst asks; the steward for the dataset's org unit, or a developer or
-// admin, decides; nobody decides their own request (enforced here, in the UPDATE, and
-// by a CHECK in config/platform/021-dataset-release.sql). The copy itself runs
+// An analyst or admin publishes directly: the release is recorded and
+// approved by the same person in one call (config/platform/024-three-tiers.sql
+// dropped the rule that nobody decides their own request). A release left in
+// 'requested' from before that can still be approved or rejected by an
+// analyst or admin. The copy itself runs
 // as the Trino publisher identity -- the one non-admin identity OPA lets write
 // published -- after the response has gone back, because a large table can
 // take longer to copy than nginx waits for an answer.
 
-const RELEASE_REQUEST_TIERS: readonly AccessTier[] = ['analyst', 'developer', 'admin'];
+const RELEASE_REQUEST_TIERS: readonly AccessTier[] = ['analyst', 'admin'];
 const RELEASE_DOMAINS = ['student', 'personnel', 'research', 'academic_services', 'indicator'];
 const RELEASE_ACCESS_LEVELS: readonly ReleaseAccessLevel[] = ['university', 'restricted'];
 const RELEASE_CADENCES: readonly ReleaseCadence[] = ['manual', 'daily', 'weekly', 'monthly'];
 const ORG_UNIT = /^[a-z0-9_-]{1,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Who may see a release: requesters see all, a steward only their own org unit's. */
+/** Who may see a release: publishers see all; nobody else sees any. */
 function releaseScopeFor(account: Account): { orgUnit: string | null } | null {
-  if (RELEASE_REQUEST_TIERS.includes(account.accessTier)) {
-    return { orgUnit: null };
-  }
-  if (account.accessTier === 'steward' && account.orgUnit) {
-    return { orgUnit: account.orgUnit };
-  }
-  return null;
+  return RELEASE_REQUEST_TIERS.includes(account.accessTier) ? { orgUnit: null } : null;
 }
 
-function canDecide(account: Account, release: ReleaseRecord): boolean {
-  if (release.requestedBy === account.userId) {
-    return false;
-  }
-  if (account.accessTier === 'developer' || account.accessTier === 'admin') {
-    return true;
-  }
-  return account.accessTier === 'steward' && account.orgUnit === release.ownerOrgUnit;
+function canDecide(account: Account): boolean {
+  return RELEASE_REQUEST_TIERS.includes(account.accessTier);
 }
 
 /** The release plus what this viewer may do with it, so the portal never has to re-derive the rule. */
 function releaseView(account: Account, release: ReleaseRecord) {
-  return { ...release, canDecide: release.status === 'requested' && canDecide(account, release) };
+  return { ...release, canDecide: release.status === 'requested' && canDecide(account) };
 }
 
 function optionalText(value: unknown, max: number): string | null | 'invalid' {
@@ -1020,9 +1120,9 @@ async function handleCreateRelease(req: IncomingMessage, res: ServerResponse): P
     return;
   }
 
+  let release: ReleaseRecord;
   try {
-    const release = await store.releases.create(parsed, account.userId);
-    sendJson(res, 201, { release: releaseView(account, release) });
+    release = await store.releases.create(parsed, account.userId);
   } catch (error) {
     if (error instanceof ReleaseConflictError) {
       sendJson(res, 409, { error: 'release_already_open' });
@@ -1030,6 +1130,16 @@ async function handleCreateRelease(req: IncomingMessage, res: ServerResponse): P
     }
     throw error;
   }
+  // Published by the person who asked, straight away.
+  const claimed = await store.releases.claimForApproval(release.releaseId, account.userId);
+  if (!claimed) {
+    sendJson(res, 409, { error: 'release_already_decided' });
+    return;
+  }
+  sendJson(res, 202, { release: releaseView(account, claimed) });
+  void runRelease(claimed).catch((error: unknown) => {
+    console.error(`[auth] release ${claimed.releaseId} could not record its outcome`, error);
+  });
 }
 
 /** Reads a release the account is allowed to see; sends 404 for one it is not, so ids cannot be probed. */
@@ -1089,11 +1199,7 @@ async function handleApproveRelease(req: IncomingMessage, res: ServerResponse, r
   if (!release) {
     return;
   }
-  if (release.requestedBy === account.userId) {
-    sendJson(res, 403, { error: 'self_approval_forbidden' });
-    return;
-  }
-  if (!canDecide(account, release)) {
+  if (!canDecide(account)) {
     sendJson(res, 403, { error: 'not_data_owner' });
     return;
   }
@@ -1117,11 +1223,7 @@ async function handleRejectRelease(req: IncomingMessage, res: ServerResponse, re
   if (!release) {
     return;
   }
-  if (release.requestedBy === account.userId) {
-    sendJson(res, 403, { error: 'self_approval_forbidden' });
-    return;
-  }
-  if (!canDecide(account, release)) {
+  if (!canDecide(account)) {
     sendJson(res, 403, { error: 'not_data_owner' });
     return;
   }
@@ -1155,7 +1257,7 @@ async function handleCatalogReleases(res: ServerResponse): Promise<void> {
 // The portal's admin page drives these. The tier check here is the first of
 // two: every write also goes through a SECURITY DEFINER function in
 // config/platform/022-admin-tier.sql that re-checks the actor and refuses
-// 'developer', self-changes and developer targets on its own. A tier change
+// self-changes and tiers outside the assignable list on its own. A tier change
 // reaches Trino through the trino-groups-sync service, not from here.
 
 const USER_ADMIN_TIERS: readonly AccessTier[] = ['admin'];
@@ -1167,7 +1269,6 @@ const PASSWORD_MAX_BYTES = 72;
 // The Superset<->Trino connection user. A portal account with this name would
 // be impersonated as the connection itself.
 const RESERVED_USERNAMES = new Set(['superset']);
-const ORG_SCOPED_TIERS: readonly AccessTier[] = ['viewer', 'steward'];
 
 async function requireUserAdmin(req: IncomingMessage, res: ServerResponse): Promise<Account | null> {
   const account = await requireAccount(readCookies(req.headers.cookie));
@@ -1192,20 +1293,17 @@ function passwordProblem(password: unknown): string | null {
   return null;
 }
 
-/** Tier and org unit together, since whether an org unit is required depends on the tier. */
-function parseGrant(body: Record<string, unknown>): { accessTier: AccessTier; orgUnit: string | null } | string {
+/**
+ * The tier, and no org unit: no tier is scoped to one any more
+ * (config/platform/024-three-tiers.sql), so whatever was sent is ignored and
+ * the account's org unit is cleared.
+ */
+function parseGrant(body: Record<string, unknown>): { accessTier: AccessTier; orgUnit: null } | string {
   const accessTier = body.accessTier;
   if (typeof accessTier !== 'string' || !ADMIN_ASSIGNABLE_TIERS.includes(accessTier as AccessTier)) {
     return 'tier_not_assignable';
   }
-  const rawOrgUnit = typeof body.orgUnit === 'string' ? body.orgUnit.trim().toLowerCase() : '';
-  if (rawOrgUnit && !ORG_UNIT.test(rawOrgUnit)) {
-    return 'invalid_org_unit';
-  }
-  if (!rawOrgUnit && ORG_SCOPED_TIERS.includes(accessTier as AccessTier)) {
-    return 'org_unit_required';
-  }
-  return { accessTier: accessTier as AccessTier, orgUnit: rawOrgUnit || null };
+  return { accessTier: accessTier as AccessTier, orgUnit: null };
 }
 
 /** Sends the error for a refusal the database raised, or rethrows anything else. */
@@ -1215,7 +1313,7 @@ function sendAdminError(res: ServerResponse, error: unknown): void {
   }
   const status = error.code === 'account_not_found' ? 404
     : ['email_taken', 'username_taken'].includes(error.code) ? 409
-    : ['not_admin', 'self_change_forbidden', 'target_is_developer', 'tier_not_assignable'].includes(error.code) ? 403
+    : ['not_admin', 'self_change_forbidden', 'tier_not_assignable'].includes(error.code) ? 403
     : 400;
   sendJson(res, status, { error: error.code });
 }
@@ -1580,6 +1678,27 @@ async function main(): Promise<void> {
     console.info(`[auth] listening on ${config.port}`);
   });
 
+  let bridge: ReturnType<typeof createServer> | null = null;
+  if (config.supersetLoginBridge) {
+    const { port, secret } = config.supersetLoginBridge;
+    bridge = createServer((req, res) => {
+      const path = new URL(req.url ?? '/', 'http://bridge').pathname;
+      if (path !== SUPERSET_LOGIN_PATH || req.method !== 'POST') {
+        sendJson(res, 404, { error: 'not_found' });
+        return;
+      }
+      void supersetVerifyPassword(req, res, secret).catch((error: unknown) => {
+        console.error('[auth] superset sign-in check failed', error);
+        if (!res.headersSent) {
+          sendJson(res, 500, { error: 'internal_error' });
+        }
+      });
+    });
+    bridge.listen(port, () => {
+      console.info(`[auth] Superset login bridge listening on ${port}`);
+    });
+  }
+
   // Retention is applied by the service that owns the data, on a timer, rather
   // than by an operator remembering to run it.
   const purgeTimer = setInterval(() => {
@@ -1594,6 +1713,7 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     console.info(`[auth] ${signal} received, shutting down`);
+    bridge?.close();
     server.close(() => {
       void store.close().finally(() => process.exit(0));
     });

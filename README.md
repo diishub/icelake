@@ -103,7 +103,7 @@ Passwords are not hard-coded in this README. The source of truth is your local
 | Surface | Identity | Credential source | Purpose |
 |---|---|---|---|
 | Superset | `psu-admin` by default | `PSU_ADMIN_PASSWORD` | Full local administrator |
-| Superset | `analyst` by default | `PSU_ANALYST_PASSWORD` | Read + write (`INSERT`/`UPDATE`/`DELETE`) on `curated` and `published`; author dashboards |
+| Superset | `analyst` by default | `PSU_ANALYST_PASSWORD` | Shared dev persona with the `analyst` tier (see the tier table below); author dashboards. Portal analysts and admins sign in with their own portal email and password once `SUPERSET_LOGIN_BRIDGE_SECRET` is set (`config/superset/psu_security_manager.py`) |
 | Superset | one account per `PSU_VIEWER_<n>_USERNAME` (`viewer`/`viewer-eng`/`viewer-med` by default) | `PSU_VIEWER_<n>_PASSWORD` | Read `published` only; each account's `PSU_VIEWER_<n>_ORG_UNIT` further narrows which rows it sees on tables opted into row filtering — see §4.1 |
 | NiFi | `psu-admin` by default | `NIFI_PASSWORD` | NiFi single-user administrator |
 | Trino | `nifi` by default | `TRINO_INGESTION_PASSWORD` | Dev-only table operations in `raw`, `curated`, and `documents`; authenticates like every other identity since §4.2 |
@@ -273,7 +273,7 @@ Sign out of Superset and repeat queries as `analyst` and each viewer account.
 | Superset user | Trino group(s) | Allowed data access |
 |---|---|---|
 | `psu-admin` | `psu_admin` | All catalogs and operations |
-| `analyst` | `psu_analyst` | Read `curated` and `published`; write (`INSERT`/`UPDATE`/`DELETE`) `curated` only — `published` changes only through an approved release (`/publish`) |
+| `analyst` | `psu_analyst` | Read `curated`, `published`, and the reviewed-upload tables in `raw` (`steward_*`); write and create/replace tables in `curated` only — `published` changes only through a release (`/publish`) |
 | viewer with `_ORG_UNIT=*` (`viewer` by default) | `psu_viewer`, `psu_viewer_exec` | Read all of `published`, unfiltered |
 | viewer with `_ORG_UNIT=eng`/`med`/... | `psu_viewer`, `psu_viewer_org_<unit>` | Read `published`, row-filtered to its org unit on any table listed in `config/opa/org_scoped_tables.json` |
 | value of `TRINO_INGESTION_USERNAME` | `psu_ingestion` | Dev-only table operations in `raw`, `curated`, and `documents` through Trino |
@@ -630,7 +630,7 @@ docker compose up -d --force-recreate superset-init superset
 
 `config/superset/bootstrap_embed.py` (run by `bootstrap.sh`, part of
 `superset-init`) reads `SUPERSET_EMBED_DASHBOARD_SLUGS` -- `key=slug` pairs,
-comma separated (default `ops=psu-platform-operations`) -- enables embedding
+comma separated (empty by default: nothing is embedded until one is named) -- enables embedding
 for each dashboard that already exists, and prints a ready-to-paste line:
 `SUPERSET_EMBED_DASHBOARDS=ops=<uuid>`. Copy that whole line into `.env` and
 recreate `psu-auth`. Until `SUPERSET_EMBED_DASHBOARDS` is set,

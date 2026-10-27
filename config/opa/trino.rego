@@ -140,15 +140,30 @@ allow if {
 # trusting them with every row in curated/published, not just their own
 # unit's. Revisit once there is a write path that can actually be scoped.
 
-# Analysts additionally get row-level write access on curated -- schema/table
-# DDL (CreateTable, DropTable, ...) stays admin/ingestion-only. Published is
-# not writable here: what reaches it goes through a release a data owner
-# approved (identity.dataset_release), written by the publisher identity below.
+# Analysts build curated from what they reviewed: write access on curated,
+# including creating and replacing tables (CREATE [OR REPLACE] TABLE ... AS
+# SELECT asks CreateTable, plus DropTable when one exists). Schema DDL stays
+# admin/ingestion-only. Published is not writable here: what reaches it goes
+# through a release (identity.dataset_release), written by the publisher
+# identity below.
 allow if {
   is_analyst
   table.catalogName == "polaris"
   table.schemaName == "curated"
-  operation in {"InsertIntoTable", "UpdateTableColumns", "DeleteFromTable"}
+  operation in {"InsertIntoTable", "UpdateTableColumns", "DeleteFromTable", "CreateTable", "DropTable"}
+}
+
+# The source for that: raw tables made from submitted files. psu-auth names
+# them steward_<org_unit>_<suffix> (services/auth/src/trino.ts) and imports
+# only the columns an analyst classified as public in review. Other raw
+# tables -- loaded by ingestion from source systems -- stay out of reach,
+# since nobody has classified their columns.
+allow if {
+  is_analyst
+  is_select
+  table.catalogName == "polaris"
+  table.schemaName == "raw"
+  startswith(table.tableName, "steward_")
 }
 
 # ---------------------------------------------------------------------------

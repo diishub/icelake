@@ -1,12 +1,11 @@
 /*
- * Dataset releases: an analyst asks for a curated table to be published, the
- * data owner for its org unit (or a developer or admin) approves or rejects it, and
- * psu-auth copies it into polaris.published. See
- * config/platform/021-dataset-release.sql.
+ * Dataset releases: an analyst or admin publishes a curated table, and
+ * psu-auth copies it into polaris.published straight away. See
+ * config/platform/021-dataset-release.sql and 024-three-tiers.sql.
  *
- * Every rule that matters -- who may ask, who may decide, that nobody decides
- * their own request -- is enforced by psu-auth and the database. This page only
- * shows the buttons the server says apply (release.canDecide, canRequest).
+ * Who may publish is enforced by psu-auth. This page only shows the buttons
+ * the server says apply (release.canDecide for a release left in 'requested'
+ * from before, canRequest).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DetailModal } from '@/components/publish/DetailModal';

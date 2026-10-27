@@ -68,7 +68,6 @@ export function UsersTable({ accounts, loaded, selfUserId, alert, onRefresh, onC
             <tr>
               <th scope="col">{t('admin.colAccount')}</th>
               <th scope="col">{t('admin.colTier')}</th>
-              <th scope="col">{t('admin.colOrgUnit')}</th>
               <th scope="col">{t('admin.colStatus')}</th>
               <th scope="col">{t('admin.colLastLogin')}</th>
               <th scope="col">
@@ -79,23 +78,22 @@ export function UsersTable({ accounts, loaded, selfUserId, alert, onRefresh, onC
           <tbody id="users-tbody">
             {!loaded ? (
               <tr>
-                <td colSpan={6} className="review-empty-state">
+                <td colSpan={5} className="review-empty-state">
                   {t('review.loading')}
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={6} className="review-empty-state">
+                <td colSpan={5} className="review-empty-state">
                   {t(accounts.length ? 'admin.noMatch' : 'admin.noUsers')}
                 </td>
               </tr>
             ) : (
               visible.map((account) => {
                 const isSelf = account.userId === selfUserId;
-                const isDeveloper = account.accessTier === 'developer';
-                // psu-auth refuses both anyway (self_change_forbidden,
-                // target_is_developer); the disabled button says why up front.
-                const editable = !isSelf && !isDeveloper;
+                // psu-auth refuses it anyway (self_change_forbidden); the
+                // disabled button says why up front.
+                const editable = !isSelf;
                 const meta = [account.email, account.username ? `trino: ${account.username}` : null]
                   .filter(Boolean)
                   .join(' · ');
@@ -116,7 +114,6 @@ export function UsersTable({ accounts, loaded, selfUserId, alert, onRefresh, onC
                     <td>
                       <span className="upload-status-badge">{tierLabel(account.accessTier)}</span>
                     </td>
-                    <td>{account.orgUnit || '—'}</td>
                     <td>
                       <span className={`state-badge ${account.isActive ? 'is-published' : 'is-withheld'}`}>
                         {t(account.isActive ? 'admin.statusActive' : 'admin.statusInactive')}
@@ -129,15 +126,13 @@ export function UsersTable({ accounts, loaded, selfUserId, alert, onRefresh, onC
                         type="button"
                         disabled={!editable}
                         title={
-                          editable
-                            ? undefined
-                            : t(isDeveloper ? 'admin.error.target_is_developer' : 'admin.error.self_change_forbidden')
+                          editable ? undefined : t('admin.error.self_change_forbidden')
                         }
                         onClick={() => onEdit(account)}
                       >
                         {t('admin.edit')}
                       </button>
-                      {account.hasPassword && !isDeveloper ? (
+                      {account.hasPassword ? (
                         <button className="button button-ghost button-small" type="button" onClick={() => onReset(account)}>
                           {t('admin.resetPassword')}
                         </button>

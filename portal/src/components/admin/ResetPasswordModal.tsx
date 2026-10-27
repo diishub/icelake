@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { PasswordInput } from '@/components/PasswordInput';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 import { AdminModal, passwordInputProblem, useAdminText } from './shared';
 import type { Alert, ManagedAccount } from './shared';
 
@@ -13,7 +13,7 @@ interface Props {
 
 /** Like the create modal, the passwords are read from the form on submit only. */
 export function ResetPasswordModal({ account, onClose, onDone }: Props) {
-  const { t, errorMessage } = useAdminText();
+  const { t, errorAlert } = useAdminText();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,7 +23,7 @@ export function ResetPasswordModal({ account, onClose, onDone }: Props) {
     const password = String(form.get('password') ?? '');
     const problem = passwordInputProblem(password, String(form.get('passwordConfirm') ?? ''));
     if (problem) {
-      setAlert({ message: errorMessage(problem), kind: 'error' });
+      setAlert(errorAlert(problem));
       return;
     }
     setSubmitting(true);
@@ -31,7 +31,7 @@ export function ResetPasswordModal({ account, onClose, onDone }: Props) {
       await api('POST', `/auth/admin/users/${encodeURIComponent(account.userId)}/password`, { password });
       onDone(t('admin.passwordReset'));
     } catch (error) {
-      setAlert({ message: errorMessage(error instanceof ApiError ? error.code : undefined), kind: 'error' });
+      setAlert(errorAlert(error));
       setSubmitting(false);
     }
   }

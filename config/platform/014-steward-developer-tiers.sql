@@ -51,10 +51,18 @@ $$;
 -- A steward is always scoped to one org unit -- there is no "steward for the
 -- whole university" the way viewer_exec exists for viewers, because the
 -- concept being modelled is a specific unit's data owner.
-ALTER TABLE identity.app_user DROP CONSTRAINT IF EXISTS app_user_viewer_is_scoped;
-ALTER TABLE identity.app_user
-  ADD CONSTRAINT app_user_viewer_is_scoped
-  CHECK (access_tier NOT IN ('viewer', 'steward') OR org_unit IS NOT NULL);
+-- Not once 024-three-tiers.sql has applied: a viewer has no org unit there,
+-- and it removes this constraint.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'app_user_tier_in_use') THEN
+    ALTER TABLE identity.app_user DROP CONSTRAINT IF EXISTS app_user_viewer_is_scoped;
+    ALTER TABLE identity.app_user
+      ADD CONSTRAINT app_user_viewer_is_scoped
+      CHECK (access_tier NOT IN ('viewer', 'steward') OR org_unit IS NOT NULL);
+  END IF;
+END
+$$;
 
 -- The gap described above, enforced rather than just documented: any granted
 -- tier needs a way to reach Trino, which for an OIDC account is the subject

@@ -12,8 +12,17 @@ TRINO_PASSWORD = os.environ["SUPERSET_TRINO_PASSWORD"]
 
 # The certificate is self-signed by this stack, so there is nothing to verify
 # it against. The transport is unverified; the identity is not.
+#
+# The one Superset database. allow_multi_catalog lets datasets and SQL Lab
+# reach Trino's other catalogs on the same connection -- the operations
+# dashboard reads `platform` this way (bootstrap_ops_dashboard.py). It widens
+# what can be *asked*, not what can be *read*: every query is impersonated,
+# and OPA decides per catalog and schema (config/opa/trino.rego).
 ENGINE_EXTRA = json.dumps(
-    {"engine_params": {"connect_args": {"http_scheme": "https", "verify": False}}}
+    {
+        "engine_params": {"connect_args": {"http_scheme": "https", "verify": False}},
+        "allow_multi_catalog": True,
+    }
 )
 
 app = create_app()

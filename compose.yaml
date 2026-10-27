@@ -85,7 +85,12 @@ x-superset-common: &superset-common
     # should enable for embedding. Add to this list, rerun superset-init, and
     # copy the printed SUPERSET_EMBED_DASHBOARDS line into .env; no new route
     # or portal code needed for another dashboard.
-    SUPERSET_EMBED_DASHBOARD_SLUGS: ${SUPERSET_EMBED_DASHBOARD_SLUGS:-ops=psu-platform-operations}
+    SUPERSET_EMBED_DASHBOARD_SLUGS: ${SUPERSET_EMBED_DASHBOARD_SLUGS:-}
+    # Portal analysts and admins sign in to Superset with their portal email
+    # and password, checked by psu-auth (config/superset/psu_security_manager.py).
+    # Both empty leaves Superset with its own accounts only.
+    PSU_AUTH_LOGIN_BRIDGE_URL: ${PSU_AUTH_LOGIN_BRIDGE_URL:-http://psu-auth:8089/internal/superset/verify-password}
+    SUPERSET_LOGIN_BRIDGE_SECRET: ${SUPERSET_LOGIN_BRIDGE_SECRET:-}
   volumes:
     - ./config/superset:/app/pythonpath:ro
     - ./runtime/superset:/app/superset_home
@@ -629,6 +634,12 @@ services:
       PASSWORD_LOGIN_BCRYPT_COST: ${PASSWORD_LOGIN_BCRYPT_COST:-12}
       PASSWORD_LOGIN_MAX_ATTEMPTS: ${PASSWORD_LOGIN_MAX_ATTEMPTS:-8}
       PASSWORD_LOGIN_WINDOW_SECONDS: ${PASSWORD_LOGIN_WINDOW_SECONDS:-900}
+      # Superset's check of a portal email and password (services/auth/src/server.ts,
+      # "Superset sign-in with a portal password"). Listens on its own port,
+      # which is deliberately not published and not proxied by nginx; empty
+      # turns it off.
+      SUPERSET_LOGIN_BRIDGE_SECRET: ${SUPERSET_LOGIN_BRIDGE_SECRET:-}
+      SUPERSET_LOGIN_BRIDGE_PORT: "8089"
       # Embedded Superset dashboards for viewer_exec/analyst accounts (§ role
       # pages). Optional: unset leaves /auth/embeds/* answering 503, same
       # pattern as OIDC above.

@@ -15,3 +15,6 @@ portal/data/catalog.json
 # Auth service build artefacts.
 services/auth/node_modules/
 services/auth/dist/
+
+# Playwright MCP artifacts (screenshots, logs, snapshots)
+.playwright-mcp/

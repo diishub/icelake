@@ -173,7 +173,13 @@ SELECT st.target_schema || '.' || st.target_table_name AS target_table,
        last_any.status           AS last_status,
        last_any.started_at       AS last_attempt_started_at,
        last_any.skip_reason,
-       now() - last_success.started_at AS age_since_last_success
+       now() - last_success.started_at AS age_since_last_success,
+       -- The same age in hours, for the operations dashboard. Trino's
+       -- PostgreSQL connector has no mapping for interval and silently drops
+       -- the column above, so the dashboard reads this one. Appended last:
+       -- CREATE OR REPLACE VIEW can only add columns at the end.
+       round(extract(epoch FROM now() - last_success.started_at) / 3600.0, 1)::numeric(12, 1)
+         AS age_since_last_success_hours
 FROM ingest.source_table AS st
 JOIN ingest.source_system AS ss USING (source_system_id)
 LEFT JOIN LATERAL (
