@@ -43,7 +43,10 @@ export function UploadHistory({ uploads, refreshing, onRefresh }: Props) {
     }
   }
 
-  let filtered = filter === 'all' ? uploads : uploads.filter((u) => u.status === filter);
+  // A load in progress is still waiting from the uploader's side.
+  const matches = (status: UploadItem['status']) =>
+    status === filter || (filter === 'pending_review' && status === 'loading');
+  let filtered = filter === 'all' ? uploads : uploads.filter((u) => matches(u.status));
   const q = search.trim().toLowerCase();
   if (q) {
     filtered = filtered.filter((u) =>
@@ -81,6 +84,9 @@ export function UploadHistory({ uploads, refreshing, onRefresh }: Props) {
         ) : (
           t('upload.documentApproved')
         );
+      } else if (item.status === 'loading') {
+        statusText = t('upload.statusLoading');
+        statusDetail = '';
       } else if (item.status === 'rejected') {
         statusClass = 'status-badge-rejected';
         statusText = t('upload.statusRejected');

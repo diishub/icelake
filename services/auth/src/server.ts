@@ -29,8 +29,8 @@ import { hashPassword, LoginRateLimiter, verifyPassword } from './password.js';
 import { ADMIN_ASSIGNABLE_TIERS, AdminActionError, IdentityStore } from './store.js';
 import { mintDashboardGuestToken } from './supersetEmbed.js';
 import { putStagedUpload, putObject, getObject } from './rustfs.js';
-import { bridgeCsvToIceberg } from './trino.js';
-import type { ReviewColumn } from './trino.js';
+import { BridgeInputError, bridgeCsvToIceberg, planCsvBridge } from './trino.js';
+import type { BridgeParams, ReviewColumn } from './trino.js';
 import {
   listCuratedTables, previewCuratedTable, publishCuratedTable, PublishError, TABLE_NAME,
 } from './publish.js';
@@ -832,48 +832,39 @@ async function handleApproveReview(
     const tableSuffix = (typeof body?.tableSuffix === 'string' ? body.tableSuffix.trim().toLowerCase() : '');
     const columns = Array.isArray(body?.columns) ? body!.columns : [];
 
-    if (!/^[a-z][a-z0-9_]*$/.test(tableSuffix)) {
-      sendJson(res, 400, { error: 'invalid_table_suffix', message: 'tableSuffix must match ^[a-z][a-z0-9_]*$' });
-      return;
-    }
     if (columns.length === 0) {
       sendJson(res, 400, { error: 'columns_required' });
       return;
     }
-
     try {
-      const bridgeResult = await bridgeCsvToIceberg(config.trino, {
-        uploadId,
-        orgUnit: upload.orgUnit,
-        tableSuffix,
-        bucket: config.rustfs.bucket,
-        objectKey: upload.objectKey,
-        uploadedBy: upload.uploaderUsername || upload.userId,
-        columns,
-      });
+      planCsvBridge({ tableSuffix, columns });
+    } catch (error) {
+      if (error instanceof BridgeInputError) {
+        sendJson(res, 400, { error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
 
-      await store.recordReviewDecision(
-        uploadId,
-        'registered',
-        reviewerUsername,
-        bridgeResult.targetTable,
-        bridgeResult.columnsIncluded,
-        bridgeResult.columnsExcluded,
-      );
-
-      sendJson(res, 200, {
-        ok: true,
-        status: 'registered',
-        targetTable: bridgeResult.targetTable,
-        columnsIncluded: bridgeResult.columnsIncluded,
-        columnsExcluded: bridgeResult.columnsExcluded,
-      });
-      return;
-    } catch (err: any) {
-      console.error('[auth] csv bridge to iceberg failed:', err);
-      sendJson(res, 500, { error: 'bridge_failed', detail: err.message || String(err) });
+    // The load can outlast nginx's wait for /auth/, so it runs after the
+    // response; the portal polls the upload until it leaves 'loading'.
+    if (!(await store.claimForLoading(uploadId, reviewerUsername))) {
+      sendJson(res, 409, { error: 'upload_already_decided' });
       return;
     }
+    sendJson(res, 202, { ok: true, status: 'loading' });
+    void runCsvLoad({
+      uploadId,
+      orgUnit: upload.orgUnit,
+      tableSuffix,
+      bucket: config.rustfs.bucket,
+      objectKey: upload.objectKey,
+      uploadedBy: upload.uploaderUsername || upload.userId,
+      columns,
+    }).catch((error: unknown) => {
+      console.error(`[auth] upload ${uploadId} could not record its load outcome`, error);
+    });
+    return;
   }
 
   try {
@@ -882,6 +873,18 @@ async function handleApproveReview(
   } catch (error) {
     console.error('[auth] document approval failed', error);
     sendJson(res, 500, { error: 'internal_error' });
+  }
+}
+
+/** The Iceberg load, after the approve response has gone. Every outcome lands on the upload row. */
+async function runCsvLoad(params: BridgeParams): Promise<void> {
+  try {
+    const result = await bridgeCsvToIceberg(config.trino!, params);
+    await store.markLoaded(params.uploadId, result.targetTable, result.columnsIncluded, result.columnsExcluded);
+    console.info(`[auth] upload ${params.uploadId} loaded into ${result.targetTable}`);
+  } catch (error) {
+    console.error(`[auth] upload ${params.uploadId} load into iceberg failed`, error);
+    await store.markLoadFailed(params.uploadId, 'load_failed');
   }
 }
 
@@ -1648,6 +1651,16 @@ async function main(): Promise<void> {
     }
   } catch (error) {
     console.error('[auth] could not check for interrupted releases', error);
+  }
+
+  // Same for upload loads; not fatal before 026-upload-async-load.sql.
+  try {
+    const interrupted = await store.failInterruptedLoads();
+    if (interrupted > 0) {
+      console.warn(`[auth] ${interrupted} upload load(s) were interrupted by a restart and returned to review`);
+    }
+  } catch (error) {
+    console.error('[auth] could not check for interrupted upload loads', error);
   }
 
   // PSU Passport is optional at the process level. A deployment with no

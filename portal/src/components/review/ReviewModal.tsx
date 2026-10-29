@@ -24,6 +24,9 @@ interface PreviewResponse {
 
 type Phase = 'loading' | 'ready' | 'error';
 
+/** How often an open dialog re-reads an upload whose Iceberg load is running. */
+const LOAD_POLL_MS = 3000;
+
 /** Suggest a table suffix from the file name; psu-auth re-validates it anyway. */
 function defaultSuffix(filename: string | undefined): string {
   const suffix = (filename || 'data')
@@ -138,6 +141,7 @@ export function ReviewModal({ uploadId, onClose, onDecided }: Props) {
   const ready = phase === 'ready' && upload !== null;
   const isCsv = upload?.fileKind === 'csv';
   const isPending = ready && upload.status === 'pending_review';
+  const isLoading = ready && upload.status === 'loading';
   const publicCount = columns.filter((c) => c.classification === 'public').length;
 
   const afterDecision = async () => {
@@ -145,6 +149,30 @@ export function ReviewModal({ uploadId, onClose, onDecided }: Props) {
     // Re-open as decided, as the old portal did, unless the reviewer closed the dialog meanwhile.
     if (alive.current) setReloadToken((n) => n + 1);
   };
+
+  // Approving a CSV answers before the load finishes (psu-auth runCsvLoad);
+  // re-read the upload until it lands as registered or returns to pending.
+  useEffect(() => {
+    if (!isLoading) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      api<PreviewResponse>('GET', `/auth/reviews/${encodeURIComponent(uploadId)}/preview`)
+        .then((data) => {
+          if (cancelled || data.upload.status === 'loading') return;
+          cancelled = true;
+          window.clearInterval(timer);
+          void afterDecision();
+        })
+        .catch(() => {
+          // Keep polling; a single failed read is not an outcome.
+        });
+    }, LOAD_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // afterDecision only closes over props and setters that do not change while open.
+  }, [isLoading, uploadId]);
 
   const handleApprove = async () => {
     if (!upload) return;
@@ -240,6 +268,16 @@ export function ReviewModal({ uploadId, onClose, onDecided }: Props) {
             <div className="modal-feedback-alert" role="alert">
               {alert}
             </div>
+          ) : null}
+          {isPending && upload.loadError ? (
+            <div className="modal-feedback-alert" role="alert">
+              {t('review.loadFailed', { code: upload.loadError })}
+            </div>
+          ) : null}
+          {isLoading ? (
+            <p className="login-status" role="status" aria-live="polite">
+              {t('review.loadingNotice')}
+            </p>
           ) : null}
 
           <section className="modal-section modal-meta-section">
