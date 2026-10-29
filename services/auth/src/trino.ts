@@ -161,13 +161,29 @@ export interface BridgeParams {
   columns: ReviewColumn[];
 }
 
-export async function bridgeCsvToIceberg(
-  config: TrinoConfig,
-  params: BridgeParams,
-): Promise<{ targetTable: string; columnsIncluded: number; columnsExcluded: number }> {
+/** A reviewer's choice the bridge cannot load; `code` is safe to send back. */
+export class BridgeInputError extends Error {
+  constructor(
+    readonly code: 'invalid_table_suffix' | 'invalid_column_name' | 'unsupported_column_type' | 'no_public_column',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export interface BridgePlan {
+  publicColumns: ReviewColumn[];
+  excludedCount: number;
+}
+
+/**
+ * Checks the reviewer's table name and columns without touching Trino, so the
+ * approve call can refuse bad input before it claims the upload and answers.
+ */
+export function planCsvBridge(params: Pick<BridgeParams, 'tableSuffix' | 'columns'>): BridgePlan {
   const IDENTIFIER = /^[a-z][a-z0-9_]*$/;
   if (!IDENTIFIER.test(params.tableSuffix)) {
-    throw new Error(`table_suffix must match ${IDENTIFIER}`);
+    throw new BridgeInputError('invalid_table_suffix', `table_suffix must match ${IDENTIFIER}`);
   }
 
   const ALLOWED_TYPES = new Set(['VARCHAR', 'BIGINT', 'INTEGER', 'DOUBLE', 'BOOLEAN', 'DATE', 'TIMESTAMP']);
@@ -175,11 +191,11 @@ export async function bridgeCsvToIceberg(
   let excludedCount = 0;
 
   for (const col of params.columns) {
-    if (!IDENTIFIER.test(col.name)) {
-      throw new Error(`Column name ${col.name} must match ${IDENTIFIER}`);
+    if (typeof col?.name !== 'string' || !IDENTIFIER.test(col.name)) {
+      throw new BridgeInputError('invalid_column_name', `Column name must match ${IDENTIFIER}`);
     }
-    if (!ALLOWED_TYPES.has(col.type.toUpperCase())) {
-      throw new Error(`Column type ${col.type} is not supported`);
+    if (typeof col.type !== 'string' || !ALLOWED_TYPES.has(col.type.toUpperCase())) {
+      throw new BridgeInputError('unsupported_column_type', `Column type of ${col.name} is not supported`);
     }
     if (col.classification === 'public') {
       publicColumns.push({ name: col.name, type: col.type.toUpperCase(), classification: 'public' });
@@ -189,8 +205,19 @@ export async function bridgeCsvToIceberg(
   }
 
   if (publicColumns.length === 0) {
-    throw new Error('No column classified as public; at least one public column is required to create a table');
+    throw new BridgeInputError(
+      'no_public_column',
+      'No column classified as public; at least one public column is required to create a table',
+    );
   }
+  return { publicColumns, excludedCount };
+}
+
+export async function bridgeCsvToIceberg(
+  config: TrinoConfig,
+  params: BridgeParams,
+): Promise<{ targetTable: string; columnsIncluded: number; columnsExcluded: number }> {
+  const { publicColumns, excludedCount } = planCsvBridge(params);
 
   const quote = (name: string) => `"${name}"`;
   const targetTable = `steward_${params.orgUnit}_${params.tableSuffix}`;

@@ -5,7 +5,7 @@
  */
 import type { Language, MessageKey } from '@/i18n';
 
-export type UploadStatus = 'pending_review' | 'registered' | 'rejected' | string;
+export type UploadStatus = 'pending_review' | 'loading' | 'registered' | 'rejected' | string;
 
 export interface ReviewUpload {
   uploadId: string;
@@ -25,6 +25,8 @@ export interface ReviewUpload {
   columnsIncluded?: number | null;
   columnsExcluded?: number | null;
   rejectionReason?: string | null;
+  /** Short code for why the last Iceberg load failed (026-upload-async-load.sql). */
+  loadError?: string | null;
 }
 
 export interface PreviewColumn {
@@ -102,6 +104,9 @@ export function statusBadge(status: UploadStatus): { className: string; label: M
   }
   if (status === 'rejected') {
     return { className: 'status-badge-rejected', label: 'upload.statusRejected' };
+  }
+  if (status === 'loading') {
+    return { className: 'status-badge-pending', label: 'upload.statusLoading' };
   }
   return { className: 'status-badge-pending', label: 'upload.statusPending' };
 }

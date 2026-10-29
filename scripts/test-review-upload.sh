@@ -4,7 +4,7 @@
 # 2. Analyst lists reviews, previews schema/sample
 # 3. Analyst approves with column classifications (public vs sensitive)
 # 4. Trino creates polaris.raw."steward_eng_<suffix>" and inserts public columns
-# 5. Database status updates to 'registered'
+# 5. Database status goes loading -> 'registered' (the load runs after the 202)
 unset MSYS_NO_PATHCONV || true
 set -eu
 
@@ -132,11 +132,24 @@ approve_res="$(curl -s -w '\n%{http_code}' -b "${analyst_jar}" -X POST "${portal
 approve_status="$(printf '%s' "${approve_res}" | tail -1)"
 approve_body="$(printf '%s' "${approve_res}" | sed '$d')"
 
-[ "${approve_status}" = "200" ] && pass "analyst approval succeeded" \
-  || fail "analyst approval succeeded" "expected 200, got ${approve_status}: ${approve_body}"
+# The load runs after the answer (026-upload-async-load.sql): 202, then the
+# row moves from loading to registered.
+[ "${approve_status}" = "202" ] && pass "analyst approval accepted" \
+  || fail "analyst approval accepted" "expected 202, got ${approve_status}: ${approve_body}"
 
-# 9. Verify database record
-db_status="$(run_sql_as_owner_tuples "SELECT status FROM identity.upload_event WHERE upload_id = '${upload_id}'" | tr -d '[:space:]')"
+# A second approve while the first is loading is refused.
+again_status="$(curl -s -o /dev/null -w '%{http_code}' -b "${analyst_jar}" -X POST "${portal_base}/auth/reviews/${upload_id}/approve" \
+  -H 'Content-Type: application/json' -d "${approve_payload}")"
+[ "${again_status}" = "409" ] && pass "a second approval is refused" \
+  || fail "a second approval is refused" "expected 409, got ${again_status}"
+
+# 9. Verify database record, once the load has finished
+db_status=""
+for _ in $(seq 1 60); do
+  db_status="$(run_sql_as_owner_tuples "SELECT status FROM identity.upload_event WHERE upload_id = '${upload_id}'" | tr -d '[:space:]')"
+  [ "${db_status}" = "loading" ] || break
+  sleep 2
+done
 [ "${db_status}" = "registered" ] && pass "database record status is registered" \
   || fail "database record status" "expected registered, got '${db_status}'"
 
