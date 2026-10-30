@@ -6,7 +6,7 @@ const PRELOADED_FONTS = ['sarabun-thai-400', 'sarabun-latin-400', 'sarabun-thai-
 /**
  * Prerendered in Thai, the default language; I18nProvider switches after
  * hydration. No inline script or style anywhere: nginx serves the export
- * under `script-src 'self'; style-src 'self'` (config/portal/default.conf).
+ * under `script-src 'self'; style-src 'self'` (config/portal/default.conf.template).
  */
 export default function Document() {
   return (

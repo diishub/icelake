@@ -22,7 +22,7 @@ portal/
 ## ทำไมเลือกแบบนี้
 
 - **Static export + nginx:** nginx ยังเป็นตัวกำหนด CSP, cache header และ proxy `/auth/` ไป psu-auth
-  (`config/portal/default.conf`) ทุกหน้าดึงข้อมูลฝั่ง client ผ่าน cookie session อยู่แล้ว จึงไม่ต้องมี server rendering
+  (`config/portal/default.conf.template`) ทุกหน้าดึงข้อมูลฝั่ง client ผ่าน cookie session อยู่แล้ว จึงไม่ต้องมี server rendering
 - **Pages Router ไม่ใช่ App Router:** App Router แบบ static export ใส่ข้อมูลหน้าเป็น inline `<script>`
   ซึ่ง CSP `script-src 'self'` ไม่ยอมรับ
 - **build ด้วย webpack (`next build --webpack`):** Turbopack production build ใส่ inline bootstrap script

@@ -1,6 +1,6 @@
 /*
  * Fails the build if the static export would break the portal's CSP
- * (config/portal/default.conf: `script-src 'self'; style-src 'self'`):
+ * (config/portal/default.conf.template: `script-src 'self'; style-src 'self'`):
  *   - an executable inline <script> (only type="application/json" may be inline)
  *   - an inline <style> block or a style="" attribute
  *
