@@ -51,6 +51,46 @@ test_analyst_cannot_read_raw if {
   }})
 }
 
+test_analyst_can_read_reviewed_uploads_in_raw if {
+  allow with input as object.union(analyst_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "steward_eng_scores"}},
+  }})
+}
+
+test_analyst_cannot_write_reviewed_uploads_in_raw if {
+  every operation in {"InsertIntoTable", "DeleteFromTable", "CreateTable", "DropTable"} {
+    not allow with input as object.union(analyst_context, {"action": {
+      "operation": operation,
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "steward_eng_scores"}},
+    }})
+  }
+}
+
+test_viewer_cannot_read_reviewed_uploads_in_raw if {
+  not allow with input as object.union(viewer_exec_context, {"action": {
+    "operation": "SelectFromColumns",
+    "resource": {"table": {"catalogName": "polaris", "schemaName": "raw", "tableName": "steward_eng_scores"}},
+  }})
+}
+
+# CREATE [OR REPLACE] TABLE curated.x AS SELECT ... from SQL Lab.
+test_analyst_can_create_and_replace_curated_tables if {
+  every operation in {"CreateTable", "DropTable"} {
+    allow with input as object.union(analyst_context, {"action": {
+      "operation": operation,
+      "resource": {"table": {"catalogName": "polaris", "schemaName": "curated", "tableName": "model"}},
+    }})
+  }
+}
+
+test_analyst_cannot_create_schema_in_polaris if {
+  not allow with input as object.union(analyst_context, {"action": {
+    "operation": "CreateSchema",
+    "resource": {"schema": {"catalogName": "polaris", "schemaName": "sandbox"}},
+  }})
+}
+
 test_analyst_can_insert_curated if {
   allow with input as object.union(analyst_context, {"action": {
     "operation": "InsertIntoTable",

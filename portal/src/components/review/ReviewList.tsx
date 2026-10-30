@@ -33,10 +33,13 @@ interface Props {
 export function ReviewList({ uploads, state, filter, onFilter, onOpen }: Props) {
   const { t, language } = useI18n();
 
-  const count = (status: string) => uploads.filter((u) => u.status === status).length;
+  // An upload being loaded stays under pending until it lands as registered.
+  const inFilter = (status: string, wanted: string) =>
+    status === wanted || (wanted === 'pending_review' && status === 'loading');
+  const count = (status: string) => uploads.filter((u) => inFilter(u.status, status)).length;
   const pending = count('pending_review');
   const wanted = FILTER_STATUS[filter];
-  const filtered = wanted ? uploads.filter((u) => u.status === wanted) : uploads;
+  const filtered = wanted ? uploads.filter((u) => inFilter(u.status, wanted)) : uploads;
 
   let list;
   if (state === 'loading') {

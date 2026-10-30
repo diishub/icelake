@@ -1,0 +1,8 @@
+# Host-side CPT corpus ingestion (cpt_ingest.py, merge_corpus.py).
+# Independent of the service images. After install: playwright install chromium
+requests==2.34.2
+curl_cffi==0.16.0       # browser TLS fingerprint for bulk HTTP behind Cloudflare
+playwright==1.62.0      # one-time headed ThaiID login
+pyarrow==25.0.0         # parquet shards -> RustFS
+datasketch==2.0.0       # MinHash LSH (only with --fuzzy)
+python-dotenv==1.2.2    # merge_corpus.py loads .env

@@ -14,6 +14,8 @@ import type { DirectoryResult } from './directory.js';
 export type LoginOutcome = 'succeeded' | 'denied' | 'failed';
 export type LoginReason =
   | 'signed_in'
+  | 'superset_signed_in'
+  | 'tier_not_permitted'
   | 'signed_out'
   | 'session_expired'
   | 'state_mismatch'
@@ -31,12 +33,10 @@ export interface AccountIdentity {
   email?: string | undefined;
 }
 
-export type AccessTier = 'none' | 'viewer' | 'viewer_exec' | 'analyst' | 'steward' | 'developer' | 'admin';
+export type AccessTier = 'none' | 'viewer' | 'analyst' | 'admin';
 
-/** The tiers an admin may grant from the portal -- config/platform/022-admin-tier.sql enforces the same list. */
-export const ADMIN_ASSIGNABLE_TIERS: readonly AccessTier[] = [
-  'none', 'viewer', 'viewer_exec', 'analyst', 'steward', 'admin',
-];
+/** The tiers an admin may grant from the portal. config/platform/024-three-tiers.sql's app_user_tier_in_use holds the database to these plus 'none'. */
+export const ADMIN_ASSIGNABLE_TIERS: readonly AccessTier[] = ['viewer', 'analyst', 'admin'];
 
 /** An account as the admin page lists it. Never a password hash. */
 export interface ManagedAccount {
@@ -81,7 +81,7 @@ export class AdminActionError extends Error {
 }
 
 const ADMIN_FUNCTION_ERRORS = new Set([
-  'not_admin', 'tier_not_assignable', 'self_change_forbidden', 'target_is_developer',
+  'not_admin', 'tier_not_assignable', 'self_change_forbidden',
   'account_not_found', 'not_password_account', 'invalid_password_hash',
 ]);
 
@@ -118,7 +118,7 @@ export interface Account {
   departmentNameTh: string | null;
   majorNameTh: string | null;
   isActive: boolean;
-  /** What this account may read in Trino, granted by an administrator -- see config/platform/008-access-grants.sql, 014-steward-developer-tiers.sql and 022-admin-tier.sql. This service changes it only through the admin_* functions, on an admin's behalf. */
+  /** What this account may read in Trino, granted by an administrator -- see config/platform/008-access-grants.sql, 014-steward-developer-tiers.sql, 022-admin-tier.sql, 023-retire-developer-tier.sql and 024-three-tiers.sql. This service changes it only through the admin_* functions, on an admin's behalf. */
   accessTier: AccessTier;
   orgUnit: string | null;
 }
@@ -471,7 +471,7 @@ export class IdentityStore {
       `SELECT e.upload_id, e.user_id, e.org_unit, e.object_key, e.original_filename, e.size_bytes,
               e.uploaded_at, e.status, e.file_kind, e.reviewed_by_username, e.reviewed_at,
               e.target_table, e.columns_included, e.columns_excluded, e.extracted_text_key,
-              e.uploader_note, e.rejection_reason,
+              e.uploader_note, e.rejection_reason, e.load_error,
               u.psu_username, u.display_name
          FROM identity.upload_event e
          LEFT JOIN identity.app_user u ON u.user_id = e.user_id
@@ -497,6 +497,7 @@ export class IdentityStore {
       extractedTextKey: row.extracted_text_key ?? null,
       uploaderNote: row.uploader_note ?? null,
       rejectionReason: row.rejection_reason ?? null,
+      loadError: row.load_error ?? null,
       uploaderUsername: row.psu_username ?? null,
       uploaderDisplayName: row.display_name ?? null,
     }));
@@ -507,7 +508,7 @@ export class IdentityStore {
       `SELECT e.upload_id, e.user_id, e.org_unit, e.object_key, e.original_filename, e.size_bytes,
               e.uploaded_at, e.status, e.file_kind, e.reviewed_by_username, e.reviewed_at,
               e.target_table, e.columns_included, e.columns_excluded, e.extracted_text_key,
-              e.uploader_note, e.rejection_reason,
+              e.uploader_note, e.rejection_reason, e.load_error,
               u.psu_username, u.display_name
          FROM identity.upload_event e
          LEFT JOIN identity.app_user u ON u.user_id = e.user_id
@@ -536,9 +537,54 @@ export class IdentityStore {
       extractedTextKey: row.extracted_text_key ?? null,
       uploaderNote: row.uploader_note ?? null,
       rejectionReason: row.rejection_reason ?? null,
+      loadError: row.load_error ?? null,
       uploaderUsername: row.psu_username ?? null,
       uploaderDisplayName: row.display_name ?? null,
     };
+  }
+
+  /**
+   * Takes a pending CSV upload for loading into Iceberg, which runs after the
+   * approve response has gone. False when it was no longer pending, so two
+   * reviewers cannot load the same upload twice.
+   */
+  async claimForLoading(uploadId: string, reviewer: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE identity.upload_event
+          SET status = 'loading', reviewed_by_username = $2, reviewed_at = now(), load_error = NULL
+        WHERE upload_id = $1 AND status = 'pending_review'`,
+      [uploadId, reviewer],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async markLoaded(uploadId: string, targetTable: string, colsIncluded: number, colsExcluded: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE identity.upload_event
+          SET status = 'registered', target_table = $2, columns_included = $3, columns_excluded = $4
+        WHERE upload_id = $1 AND status = 'loading'`,
+      [uploadId, targetTable, colsIncluded, colsExcluded],
+    );
+  }
+
+  /** Back to pending so a reviewer can try again; the code says what went wrong. */
+  async markLoadFailed(uploadId: string, loadError: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE identity.upload_event
+          SET status = 'pending_review', reviewed_by_username = NULL, reviewed_at = NULL, load_error = $2
+        WHERE upload_id = $1 AND status = 'loading'`,
+      [uploadId, loadError],
+    );
+  }
+
+  /** A load left 'loading' at start-up was cut off by a restart. */
+  async failInterruptedLoads(): Promise<number> {
+    const result = await this.pool.query(
+      `UPDATE identity.upload_event
+          SET status = 'pending_review', reviewed_by_username = NULL, reviewed_at = NULL, load_error = 'interrupted'
+        WHERE status = 'loading'`,
+    );
+    return result.rowCount ?? 0;
   }
 
   async recordReviewDecision(
@@ -581,7 +627,7 @@ export interface UploadRecord {
   originalFilename: string;
   sizeBytes: number;
   uploadedAt: string;
-  status: 'pending_review' | 'registered' | 'rejected';
+  status: 'pending_review' | 'loading' | 'registered' | 'rejected';
   fileKind: 'csv' | 'pdf' | 'docx';
   reviewedByUsername: string | null;
   reviewedAt: string | null;
@@ -591,6 +637,7 @@ export interface UploadRecord {
   extractedTextKey?: string | null;
   uploaderNote?: string | null;
   rejectionReason?: string | null;
+  loadError?: string | null;
   uploaderUsername?: string | null;
   uploaderDisplayName?: string | null;
 }
@@ -775,7 +822,7 @@ export class ReleaseStore {
     const result = await this.pool.query(
       `UPDATE identity.dataset_release
           SET status = 'approved', decided_by = $2, decided_at = now()
-        WHERE release_id = $1 AND status = 'requested' AND requested_by <> $2
+        WHERE release_id = $1 AND status = 'requested'
         RETURNING release_id`,
       [releaseId, decidedBy],
     );

@@ -1,5 +1,5 @@
 /*
- * Dedicated report page for viewer_exec/analyst/developer/admin accounts --
+ * Dedicated report page for viewer/analyst/admin accounts --
  * embeds a live Superset dashboard via a guest token (services/auth's
  * /auth/embeds/<key>), so seeing real data never requires a second Superset
  * login. Gated client-side for UX only; the real gate is server-side in
@@ -162,7 +162,7 @@ export default function ReportsPage() {
               <div>
                 {breadcrumb}
                 <h1 className="page-title">{t('reports.heading')}</h1>
-                <p className="page-lead">{t('embed.opsNote')}</p>
+                <p className="page-lead">{t('reports.lead')}</p>
               </div>
               <div className="page-actions">
                 <a className="button button-ghost" href={buildServiceUrl(config, 'reports') ?? '#help'}>
@@ -171,9 +171,14 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {/* Waits for config.json so the first embed uses the deployment's key. */}
-            {configLoaded ? (
-              <EmbeddedDashboard dashboardKey={config.embeddedDashboardKey || 'ops'} />
+            {/* Waits for config.json so the first embed uses the deployment's key.
+                No key means no dashboard has been chosen for this page yet. */}
+            {configLoaded && config.embeddedDashboardKey ? (
+              <EmbeddedDashboard dashboardKey={config.embeddedDashboardKey} />
+            ) : configLoaded ? (
+              <section className="panel reports-panel">
+                <p className="panel-body embedded-dashboard-status">{t('reports.noDashboard')}</p>
+              </section>
             ) : (
               <section className="panel reports-panel">
                 <p className="panel-body embedded-dashboard-status">{t('embed.loading')}</p>

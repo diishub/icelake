@@ -126,7 +126,7 @@ scripts/create-password-account.sh someone@psu.ac.th "ชื่อที่จ�
 เข้าสู่ระบบได้ไม่ได้แปลว่าอ่านข้อมูลได้ ต้องให้สิทธิ์แยกต่างหาก:
 
 ```sql
-UPDATE identity.app_user SET access_tier = 'viewer', org_unit = '<unit>'
+UPDATE identity.app_user SET access_tier = 'viewer'
   WHERE lower(email) = lower('someone@psu.ac.th');
 ```
 ```sh
@@ -154,11 +154,14 @@ scripts/create-admin-account.sh admin@psu.ac.th "ชื่อผู้ดูแ�
 - `identity_app` ยังไม่มีสิทธิ์ UPDATE `access_tier` หรือเขียน `password_hash` เอง
   ทุกการเปลี่ยนแปลงผ่าน function แบบ SECURITY DEFINER ที่ตรวจซ้ำว่าผู้สั่งเป็น admin
   ที่ยังใช้งานอยู่ และบันทึก `admin_event` ใน transaction เดียวกัน
-- admin มอบ `developer` ไม่ได้ แก้บัญชี `developer` ไม่ได้ และเปลี่ยนสิทธิ์หรือปิด
-  บัญชีของตนเองไม่ได้ (จึงไม่มีทางลบ admin คนสุดท้ายจากหน้าเว็บ)
-- `admin` อ่านข้อมูลใน Trino ได้ทั้งหมดเท่า `developer` (group `psu_admin`) และเปิดหน้า
-  ตรวจสอบข้อมูลนำเข้า เผยแพร่ชุดข้อมูล (อนุมัติได้ทุกหน่วยงาน) และรายงานได้ ยกเว้นหน้า
-  ส่งข้อมูลของหน่วยงานซึ่งเป็นของ `steward` การมอบ `admin` จึงเท่ากับมอบสิทธิ์เข้าถึง
+- `admin` เป็น tier สิทธิ์เต็มเพียงตัวเดียว tier `developer` เดิมถูกรวมเข้ามาแล้ว
+  (`config/platform/023-retire-developer-tier.sql`) ด้วยการแปลงบัญชี `developer` ทุกบัญชีเป็น
+  `admin` บันทึกลง `admin_event` และเพิ่ม constraint `app_user_developer_retired`
+  ไม่ให้บัญชีใดกลับไปถือ `developer` ได้อีก
+- admin จัดการบัญชีของ admin คนอื่นได้ แต่เปลี่ยนสิทธิ์หรือปิดบัญชีของตนเองไม่ได้
+  (จึงไม่มีทางลบ admin คนสุดท้ายจากหน้าเว็บ)
+- `admin` อ่านข้อมูลใน Trino ได้ทั้งหมด (group `psu_admin`) และเปิดได้ทุกหน้า ได้แก่
+  ส่งข้อมูล ตรวจสอบข้อมูลนำเข้า เผยแพร่ชุดข้อมูล และรายงาน การมอบ `admin` จึงเท่ากับมอบสิทธิ์เข้าถึง
   ข้อมูลทั้งหมด ซึ่งรวมข้อมูลส่วนบุคคลตาม PDPA ให้มอบเฉพาะผู้ที่จำเป็นต่อหน้าที่
   และตรวจ `admin_event` เป็นระยะ
 - ปิดบัญชีหรือตั้งรหัสผ่านใหม่แล้ว session เดิมของบัญชีนั้นถูกลบทันที
@@ -173,7 +176,7 @@ identity ใน `.env` ทุก 10 วินาที (`TRINO_GROUPS_SYNC_SECON
 
 ข้อจำกัด: function เชื่อ actor id ที่ `psu-auth` ส่งมา ถ้า `psu-auth` ถูกเจาะ
 ผู้โจมตีอ้างเป็น admin คนใดก็ได้ และมอบ `admin` (ซึ่งอ่านข้อมูลได้ทั้งหมด) ให้บัญชีใดก็ได้
-แต่ยังมอบ `developer` ไม่ได้ และทุกการเปลี่ยนแปลงอยู่ใน `admin_event`
+แต่ทุกการเปลี่ยนแปลงอยู่ใน `admin_event`
 
 ### กฎที่บังคับไว้ในโค้ด (อีเมล/รหัสผ่าน)
 
@@ -255,25 +258,15 @@ Superset จะ**ไม่สตาร์ต**พร้อมบอกชื่�
 ผู้ดูแลต้องบันทึกสิทธิ์ให้อย่างชัดเจนก่อน:
 
 ```sql
--- ผู้ใช้รายงานที่ผูกกับหน่วยงานหนึ่ง (ต้องมี org_unit เสมอ)
-UPDATE identity.app_user
-   SET access_tier = 'viewer', org_unit = 'eng'
- WHERE psu_username = '<username>';
+-- ผู้บริหารและเจ้าของข้อมูล: ส่งข้อมูล และดูรายงานกับชุดข้อมูล published ทุกหน่วยงาน
+UPDATE identity.app_user SET access_tier = 'viewer' WHERE psu_username = '<username>';
 
--- ผู้บริหารที่เห็นทุกหน่วยงาน
-UPDATE identity.app_user SET access_tier = 'viewer_exec' WHERE psu_username = '<username>';
-
--- นักวิเคราะห์
+-- นักวิเคราะห์: ตรวจข้อมูลนำเข้า และเผยแพร่ชุดข้อมูล
 UPDATE identity.app_user SET access_tier = 'analyst' WHERE psu_username = '<username>';
 
--- เจ้าของข้อมูล ผูกกับหน่วยงานหนึ่งเสมอ (ต้องมี org_unit เหมือน viewer)
-UPDATE identity.app_user
-   SET access_tier = 'steward', org_unit = 'eng'
- WHERE psu_username = '<username>';
-
--- นักพัฒนา -- สิทธิ์เท่ากับ identity ผู้ดูแลแพลตฟอร์มทุกประการ ดูหัวข้อ
--- "ระดับสิทธิ์ทั้งหก" ด้านล่างก่อนใช้ tier นี้
-UPDATE identity.app_user SET access_tier = 'developer' WHERE psu_username = '<username>';
+-- ผู้ดูแลระบบ (admin) ให้ใช้ scripts/create-admin-account.sh แทน UPDATE ตรง
+-- เพื่อให้บันทึกลง admin_event ดูหัวข้อ "ระดับสิทธิ์" ด้านล่างก่อนมอบ tier นี้
+-- (หรือมอบ tier ทั้งสามจากหน้าผู้ดูแลระบบบน portal ซึ่งบันทึกลง admin_event เช่นกัน)
 ```
 
 แล้วสั่ง:
@@ -303,32 +296,61 @@ org unit ถ้าเซ็ตว่างก็ไม่เกิด filter —
 constraint `app_user_viewer_is_scoped` กันไม่ให้บันทึกสถานะนั้นลงฐานข้อมูลตั้งแต่แรก
 ทดสอบไว้ที่ `test_unscoped_viewer_cannot_select_published`
 
-### ระดับสิทธิ์ทั้งหก
+ตั้งแต่ `024-three-tiers.sql` บัญชี `viewer` ไม่ผูกหน่วยงานแล้ว จึงได้ทั้ง `psu_viewer`
+และ `psu_viewer_exec` ซึ่ง policy ถือว่ามีขอบเขตชัดเจน (อ่าน published ทุกหน่วยงาน)
+ส่วนกฎที่ปฏิเสธ viewer ที่ไม่มีขอบเขตยังอยู่ใน OPA เหมือนเดิม constraint
+`app_user_viewer_is_scoped` ถูกถอดออก
 
-`access_tier` รับได้ 6 ค่า (`config/platform/014-steward-developer-tiers.sql`):
+### ระดับสิทธิ์
 
-| tier | ต้องมี org_unit | อ่าน | เขียน | Trino group |
+`access_tier` ใช้ได้ 4 ค่า (`config/platform/024-three-tiers.sql` บังคับด้วย constraint
+`app_user_tier_in_use`) หน้าผู้ดูแลระบบให้เลือกได้ 3 ค่า ส่วน `none` เป็นสถานะเริ่มต้นของบัญชี
+PSU Passport ที่เพิ่งเข้าสู่ระบบครั้งแรก ไม่มีบัญชีใดผูกหน่วยงานแล้ว:
+
+| tier | ใครใช้ | อ่าน | เขียนหรือทำได้ | Trino group |
 |---|---|---|---|---|
-| `none` | ไม่ | ไม่มีเลย | ไม่มีเลย | ไม่ปรากฏใน groups.txt |
-| `viewer` | **ต้องมี** | `published` เฉพาะแถวของหน่วยงานตัวเอง | ไม่มี | `psu_viewer`, `psu_viewer_org_<unit>` |
-| `viewer_exec` | ไม่ | `published` ทุกหน่วยงาน | ไม่มี | `psu_viewer`, `psu_viewer_exec` |
-| `analyst` | ไม่ | `curated`+`published` ทุกหน่วยงาน | `curated`+`published` ทุกหน่วยงาน | `psu_analyst` |
-| `steward` | **ต้องมี** | `curated`+`published` เฉพาะแถวของหน่วยงานตัวเอง | **ไม่มี — ดูเหตุผลด้านล่าง** | `psu_steward`, `psu_steward_org_<unit>` |
-| `developer` | ไม่ | ทุกอย่าง ไม่มีข้อจำกัด | ทุกอย่าง ไม่มีข้อจำกัด | `psu_admin` (**กลุ่มเดียวกับ identity ผู้ดูแลแพลตฟอร์ม**) |
+| `none` | บัญชีที่ยังไม่ได้รับสิทธิ์ | ไม่มีเลย | ไม่มีเลย | ไม่ปรากฏใน groups.txt |
+| `viewer` | ผู้บริหารและเจ้าของข้อมูล | `published` ทุกหน่วยงาน | ส่งหรือแนบไฟล์ โดยระบุหน่วยงานทุกครั้งที่ส่ง | `psu_viewer`, `psu_viewer_exec` |
+| `analyst` | นักวิเคราะห์ข้อมูล | `curated`+`published` ทุกหน่วยงาน | `curated`+`published` ตรวจข้อมูลนำเข้า และเผยแพร่ชุดข้อมูลได้เองทันที | `psu_analyst` |
+| `admin` | ผู้ดูแลระบบ | ทุกอย่าง ไม่มีข้อจำกัด | ทุกอย่าง ไม่มีข้อจำกัด และจัดการบัญชีบน portal | `psu_admin` (**กลุ่มเดียวกับ identity ผู้ดูแลแพลตฟอร์ม**) |
 
-**ทำไม `steward` อ่านได้แต่เขียนไม่ได้** OPA/Trino บังคับ row filter ได้เฉพาะตอน
-`SELECT` (`GetRowFilters`) เท่านั้น ไม่มีกลไกบังคับ "เขียนได้เฉพาะแถวของหน่วยงานตัวเอง"
-สำหรับ `INSERT`/`UPDATE`/`DELETE` เลย ถ้าให้สิทธิ์เขียนตอนนี้ เท่ากับให้เขียนทับ
-**ทุกแถว**ใน `curated`/`published` ไม่ใช่แค่ของหน่วยงานตัวเอง ซึ่งขัดกับความหมายของ
-"เจ้าของข้อมูลของหน่วยงานตัวเอง" โดยตรง — รอเส้นทางเขียนที่ scope ได้จริงก่อน
-(เช่น ผ่าน staging table เฉพาะหน่วยงาน หรือ workflow ตรวจสอบก่อน merge)
-ตอนนี้เจ้าของข้อมูลยังส่งคำขอผ่านหัวข้อ "เมื่อข้อมูลยังไม่พร้อม" บนหน้า portal
-เหมือนเดิม
+tier `viewer_exec`, `steward` (024) และ `developer` (023) เลิกใช้แล้ว บัญชีเดิมถูกแปลงเป็น
+`viewer` และ `admin` ตามลำดับ และทุกการแปลงบันทึกลง `admin_event` กฎ OPA ของ
+`psu_viewer_org_*` และ `psu_steward_org_*` ยังเก็บไว้เผื่อกลับมาแบ่งตามหน่วยงานภายหลัง
 
-**`developer` = สิทธิ์เท่า `psu_admin` ทุกประการ ไม่ใช่ "แอดมินอย่างอ่อน"**
+**analyst ทำงานกับข้อมูลใน SQL Lab ของ Superset** หลังอนุมัติไฟล์ที่ส่งเข้ามา ข้อมูลจะอยู่ใน
+`polaris.raw."steward_<หน่วยงาน>_<ชื่อ>"` (มีเฉพาะคอลัมน์ที่จัดเป็น public ตอนตรวจ) analyst
+อ่านตารางกลุ่มนี้ได้ แต่อ่านตาราง raw อื่นที่ระบบนำเข้าจากต้นทางไม่ได้ และสร้างหรือแทนที่ตารางใน
+`curated` ได้ (`CREATE [OR REPLACE] TABLE polaris.curated.x AS SELECT ...`) จากนั้นจึงเผยแพร่
+จากหน้า `/publish` ได้
+
+**analyst และ admin login Superset ด้วยอีเมลและรหัสผ่านเดียวกับ portal** (เปิดเมื่อตั้ง
+`SUPERSET_LOGIN_BRIDGE_SECRET` แล้ว) ที่หน้า login ของ Superset ให้กรอกอีเมลในช่อง username
+Superset (`PsuPortalPasswordSecurityManager` ใน `config/superset/psu_security_manager.py`)
+ส่งอีเมลและรหัสผ่านไปให้ psu-auth ตรวจผ่าน port ภายใน 8089 ซึ่งไม่ได้เปิดออกนอก docker
+และไม่ผ่าน nginx พร้อม shared secret psu-auth ตรวจ bcrypt และใช้ rate limiter ตัวเดียวกับ
+หน้า login ของ portal แล้วตอบกลับแค่ `psu_username`, ชื่อที่แสดง และ tier
+
+- ครั้งแรกที่ login ระบบสร้างบัญชี Superset ชื่อ `psu_username` ให้เอง (analyst ได้ role `Alpha`
+  ส่วน admin ได้ `Admin`) โดยตั้งรหัสผ่านภายในแบบสุ่มที่ไม่มีใครรู้ จึงเข้าได้ทางรหัสผ่าน portal เท่านั้น
+- role ถูกตั้งใหม่จาก tier ทุกครั้งที่ login viewer, none และบัญชีที่ถูกปิดจะถูกปฏิเสธ และทุกครั้ง
+  บันทึกลง `identity.login_event` (`superset_signed_in` / `tier_not_permitted`)
+- Superset ส่ง query ไป Trino ในชื่อ `psu_username` สิทธิ์จึงตรงกับ tier บน portal เสมอ
+- ชื่อที่ไม่มี `@` (บัญชีของแพลตฟอร์มเอง เช่น `psu-admin`) ยัง login ด้วยฐานข้อมูลของ Superset ตามเดิม
+- ข้อจำกัด: ถ้าปิดบัญชีหรือลด tier บน portal แล้ว session ของ Superset ที่เปิดค้างอยู่ยังใช้ต่อได้จนหมดอายุ
+  แต่ Trino ใช้สิทธิ์ใหม่ทันทีในการ query ครั้งถัดไป เมื่อเปิด PSU Passport แล้วให้เปลี่ยนไปใช้
+  `SUPERSET_OAUTH_ENABLED` แทน ซึ่งจะปิดกลไกนี้ให้อัตโนมัติ
+
+**analyst เผยแพร่ได้เองโดยไม่มีผู้อนุมัติคนที่สอง** constraint
+`dataset_release_not_self_approved` ถูกถอดออกใน 024 และ psu-auth บันทึกคำขอพร้อมอนุมัติ
+ในคำสั่งเดียว ข้อมูลจึงไปถึง viewer ทุกคนทันทีโดยไม่มีใครตรวจซ้ำ ผู้เผยแพร่ต้องตรวจเองว่า
+ไม่มีข้อมูลส่วนบุคคลตาม PDPA ก่อนเผยแพร่ ทุกการเผยแพร่ยังบันทึกไว้ใน
+`identity.dataset_release` ว่าใครเผยแพร่และเมื่อใด
+
+**`admin` = สิทธิ์เท่า `psu_admin` ทุกประการ ไม่ใช่ "แอดมินอย่างอ่อน"**
 OPA มีกฎ `allow if is_admin` แบบไม่มีเงื่อนไขต่อท้ายเลย (บรรทัดเดียวให้ผ่านทุก
 operation ทุก schema) — บัญชี tier นี้จึงมีสิทธิ์เท่ากับ identity ที่ควบคุมทั้ง
-แพลตฟอร์ม ไม่ใช่แค่ข้อมูล ให้ tier นี้เฉพาะทีมพัฒนาของตัวเอง ไม่ใช่ผู้ใช้ทั่วไป
+แพลตฟอร์ม ไม่ใช่แค่ข้อมูล ให้ tier นี้เฉพาะผู้ดูแลแพลตฟอร์ม ไม่ใช่ผู้ใช้ทั่วไป
 ที่ "ขอสิทธิ์เยอะหน่อย"
 
 **บัญชี email/รหัสผ่านต้องมี `psu_username` ก่อนรับ tier ใด ๆ ได้** ไม่ว่า tier
@@ -369,14 +391,10 @@ scripts/test-identity.sh                                         # 23 เคส
 in-memory ต่อ process (`services/auth/src/password.ts`) เหมาะกับ deployment
 เดียวที่รันอยู่ตอนนี้ ถ้าขยายเป็นหลาย instance ต้องย้ายไป Redis หรือฐานข้อมูล
 
-**`steward` อ่านได้แต่เขียนไม่ได้** ตามที่อธิบายไว้ในหัวข้อ "ระดับสิทธิ์ทั้งหก"
-ด้านบน — Trino/OPA บังคับ row-level ได้เฉพาะตอนอ่าน ยังไม่มีเส้นทางเขียนที่
-scope ตามหน่วยงานได้จริง ต้องออกแบบเพิ่มถ้าจะเปิดให้เจ้าของข้อมูลเขียนเองโดยตรง
-
-**ยังไม่มีบัญชีจริงสักบัญชีสำหรับ 4 บทบาทที่คุยกันไว้** ระดับสิทธิ์ทั้งหมดพร้อมใช้
-ในโค้ดแล้ว (ทดสอบผ่าน `scripts/test-identity.sh` และ OPA policy ครบ) แต่ยังไม่มี
-ผู้ดูแลรัน `scripts/create-password-account.sh` จริงสักครั้ง — `identity.app_user`
-ยังมี 0 แถว ต้องสร้างบัญชีจริงเมื่อพร้อมใช้งาน
+**ยังไม่แบ่งสิทธิ์ตามหน่วยงาน** `viewer` ทุกคนเห็น published ทุกหน่วยงาน และหน่วยงาน
+ของไฟล์ที่ส่งมาเป็นค่าที่ผู้ส่งพิมพ์เอง ระบบไม่ได้ตรวจว่าผู้ส่งอยู่หน่วยงานนั้นจริง ถ้าจะกลับมา
+แบ่งตามหน่วยงาน (เช่น หลังเปิด PSU Passport) ต้องออกแบบใหม่ว่าจะผูกหน่วยงานกับบัญชีอย่างไร
+Trino/OPA บังคับ row-level ได้เฉพาะตอนอ่าน ยังไม่มีเส้นทางเขียนที่ scope ตามหน่วยงานได้จริง
 
 **ยังไม่ได้ทดสอบ PSU Passport กับ instance จริง** เพราะยังไม่มี OIDC client ที่
 ลงทะเบียนไว้ สิ่งที่ทดสอบแล้วคือ: service สตาร์ตขึ้นได้ทั้งแบบมีและไม่มี OIDC client

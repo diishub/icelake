@@ -102,7 +102,7 @@ function HomeAccount() {
                 {t('account.reviewLink')}
               </Link>
             ) : null}
-            {/* Analysts ask for releases; stewards approve their own unit's. */}
+            {/* Analysts and admins publish releases directly. */}
             {canOpen('publish', tier) ? (
               <Link id="account-publish-link" href="/publish">
                 {t('account.publishLink')}

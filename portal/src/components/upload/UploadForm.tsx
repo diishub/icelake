@@ -7,6 +7,8 @@ import type { MessageKey } from '@/i18n';
 import { formatBytes } from './types';
 
 const NOTE_MAX = 1000;
+// Same shape psu-auth holds the org unit to (ORG_UNIT in services/auth/src/server.ts).
+const ORG_UNIT = /^[a-z0-9_-]{1,64}$/;
 
 // Mirrors psu-auth's own checks (UPLOAD_MAX_BYTES and the extension test in
 // services/auth/src/server.ts handleUpload) so a wrong file is refused before
@@ -15,12 +17,11 @@ const UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.pdf', '.docx'];
 
 interface Props {
-  orgUnit: string | null;
   /** Called after a successful submission so the history picks it up. */
   onUploaded: () => void;
 }
 
-export function UploadForm({ orgUnit, onUploaded }: Props) {
+export function UploadForm({ onUploaded }: Props) {
   const { t } = useI18n();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +29,8 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
   const successRef = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState('');
+  // Kept after a successful submission: the next file is usually from the same unit.
+  const [orgUnit, setOrgUnit] = useState('');
   const [error, setError] = useState<MessageKey | null>(null);
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -113,6 +116,11 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
     setError(null);
     setSuccess(false);
 
+    const unit = orgUnit.trim().toLowerCase();
+    if (!ORG_UNIT.test(unit)) {
+      setError('upload.errorOrgUnit');
+      return;
+    }
     if (!file) {
       setError('upload.errorNoFile');
       return;
@@ -130,6 +138,8 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
     setSubmitting(true);
     try {
       const formData = new FormData();
+      // Before the file: psu-auth reads fields as they arrive.
+      formData.append('orgUnit', unit);
       formData.append('file', file);
       if (note.trim()) {
         formData.append('note', note.trim());
@@ -158,6 +168,8 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
         setError('upload.errorTooLarge');
       } else if (response.status === 400 && body.error === 'unsupported_file_type') {
         setError('upload.errorWrongType');
+      } else if (response.status === 400 && body.error === 'invalid_org_unit') {
+        setError('upload.errorOrgUnit');
       } else if (response.status === 503) {
         setError('upload.notConfigured');
       } else {
@@ -178,9 +190,6 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
         <h2 className="panel-title" id="upload-form-title">
           {t('upload.panelUploadTitle')}
         </h2>
-        <span className="input-hint-text">
-          {t('upload.orgUnitLabel')}: <code id="upload-org-unit">{orgUnit || '—'}</code>
-        </span>
       </div>
       <form className="panel-body upload-form" id="upload-form" noValidate onSubmit={onSubmit}>
         {error ? (
@@ -194,6 +203,25 @@ export function UploadForm({ orgUnit, onUploaded }: Props) {
             <span>{t('upload.successDetail')}</span>
           </div>
         ) : null}
+
+        <div className="field">
+          <label className="field-label" htmlFor="upload-org-unit">
+            {t('upload.orgUnitLabel')}
+          </label>
+          <input
+            id="upload-org-unit"
+            name="orgUnit"
+            className="publish-input"
+            type="text"
+            maxLength={64}
+            pattern="^[a-z0-9_-]{1,64}$"
+            placeholder="eng"
+            required
+            value={orgUnit}
+            onChange={(event) => setOrgUnit(event.target.value)}
+          />
+          <p className="input-hint-text">{t('upload.orgUnitHint')}</p>
+        </div>
 
         <div className="field">
           <span className="field-label">{t('upload.fileLabel')}</span>

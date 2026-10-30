@@ -1,6 +1,6 @@
 /*
  * Analyst review and approval interface.
- * Allows analysts, developers and admins to review staged uploads, classify CSV columns,
+ * Allows analysts and admins to review staged uploads, classify CSV columns,
  * inspect document text, and bridge approved datasets into Iceberg.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';

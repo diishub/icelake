@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { AccessTier } from '@/lib/tiers';
 import { AuditEvents } from './AuditEvents';
 import { CreateAccountModal } from './CreateAccountModal';
@@ -23,7 +23,7 @@ type OpenModal =
  * will be refused.
  */
 export function AccountAdmin() {
-  const { errorMessage } = useAdminText();
+  const { errorAlert } = useAdminText();
   const [accounts, setAccounts] = useState<ManagedAccount[]>([]);
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [assignableTiers, setAssignableTiers] = useState<AccessTier[]>([]);
@@ -48,9 +48,9 @@ export function AccountAdmin() {
       setEvents(history.events ?? []);
       setLoaded(true);
     } catch (error) {
-      setUsersAlert({ message: errorMessage(error instanceof ApiError ? error.code : undefined), kind: 'error' });
+      setUsersAlert(errorAlert(error));
     }
-  }, [errorMessage]);
+  }, [errorAlert]);
 
   // Load once on mount; a language change must not refetch.
   useEffect(() => {

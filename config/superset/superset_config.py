@@ -97,6 +97,23 @@ if SUPERSET_OAUTH_ENABLED:
         os.environ.get("SUPERSET_COOKIE_SECURE", "true").lower() == "true"
     )
 
+# ---------------------------------------------------------------------------
+# Portal email-and-password sign-in
+# ---------------------------------------------------------------------------
+#
+# Until PSU Passport is on, portal analysts and admins sign in here with their
+# portal email and password; psu-auth checks it (see PsuPortalPasswordSecurityManager).
+# Off when OAuth is on -- PSU Passport replaces it -- or when the bridge is not
+# configured, which leaves Superset's own accounts only.
+if (
+    not SUPERSET_OAUTH_ENABLED
+    and os.environ.get("PSU_AUTH_LOGIN_BRIDGE_URL", "").strip()
+    and os.environ.get("SUPERSET_LOGIN_BRIDGE_SECRET", "").strip()
+):
+    from psu_security_manager import PsuPortalPasswordSecurityManager
+
+    CUSTOM_SECURITY_MANAGER = PsuPortalPasswordSecurityManager
+
 FEATURE_FLAGS = {
     "DASHBOARD_RBAC": True,
     "CACHE_IMPERSONATION": True,

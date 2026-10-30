@@ -161,13 +161,13 @@ docker compose exec -T postgres /bin/sh -ec \
      --quiet --no-psqlrc -c "DELETE FROM identity.app_user WHERE email IN ('"'"'synthetic-pw@example.invalid'"'"', '"'"'synthetic-noauth@example.invalid'"'"')"' >/dev/null 2>&1
 
 # ---------------------------------------------------------------------------
-# steward and developer tiers (config/platform/014-steward-developer-tiers.sql)
+# The three tiers: viewer, analyst, admin (config/platform/014-steward-developer-tiers.sql,
+# 022-admin-tier.sql, 023-retire-developer-tier.sql, 024-three-tiers.sql)
 # ---------------------------------------------------------------------------
 #
 # A password account needs a psu_username before it can be granted anything,
 # because that column is what identity.v_trino_groups renders into the group
-# file -- the gap this migration closed. steward additionally needs org_unit,
-# the same rule viewer already had, now covering both.
+# file. A viewer carries no org unit and reads published for every unit.
 
 printf "%s\n" "INSERT INTO identity.app_user (email, display_name, password_hash, psu_username)
   VALUES ('synthetic-tier-test@example.invalid', 'Synthetic Tier Test',
@@ -179,20 +179,25 @@ expect_refused "granting a tier to a password account with no psu_username is re
        VALUES ('synthetic-no-trino-name@example.invalid', 'No Trino Name',
                '\$2a\$04\$abcdefghijklmnopqrstuuJXQxvHF3v1v1v1v1v1v1v1v1v1v1v1v', 'analyst');\n" | as_owner)"
 
-expect_refused "steward needs an org_unit, the same as viewer" \
-  "$(printf "UPDATE identity.app_user SET access_tier = 'steward' WHERE email = 'synthetic-tier-test@example.invalid';\n" | as_owner)"
+for retired in steward viewer_exec; do
+  expect_refused "${retired} is retired and can no longer be granted (024-three-tiers.sql)" \
+    "$(printf "UPDATE identity.app_user SET access_tier = '${retired}', org_unit = 'eng' WHERE email = 'synthetic-tier-test@example.invalid';\n" | as_owner)"
+done
 
-printf "%s\n" "UPDATE identity.app_user SET access_tier = 'steward', org_unit = 'eng'
+printf "%s\n" "UPDATE identity.app_user SET access_tier = 'viewer', org_unit = NULL
   WHERE email = 'synthetic-tier-test@example.invalid';" | as_owner >/dev/null
 
-expect_equals "steward with an org_unit is accepted and rendered into its own Trino group" "psu_steward,psu_steward_org_eng" \
+expect_equals "viewer needs no org_unit and is rendered as an all-units reader of published" "psu_viewer,psu_viewer_exec" \
   "$(printf "SELECT array_to_string(trino_groups, ',') FROM identity.v_trino_groups
        WHERE username = 'synthetic-tier-test';\n" | as_owner)"
 
-printf "%s\n" "UPDATE identity.app_user SET access_tier = 'developer', org_unit = NULL
+expect_refused "developer is retired and can no longer be granted (023-retire-developer-tier.sql)" \
+  "$(printf "UPDATE identity.app_user SET access_tier = 'developer', org_unit = NULL WHERE email = 'synthetic-tier-test@example.invalid';\n" | as_owner)"
+
+printf "%s\n" "UPDATE identity.app_user SET access_tier = 'admin', org_unit = NULL
   WHERE email = 'synthetic-tier-test@example.invalid';" | as_owner >/dev/null
 
-expect_equals "developer is rendered into the same Trino group the platform admin identity uses" "psu_admin" \
+expect_equals "admin is rendered into the same Trino group the platform admin identity uses" "psu_admin" \
   "$(printf "SELECT array_to_string(trino_groups, ',') FROM identity.v_trino_groups
        WHERE username = 'synthetic-tier-test';\n" | as_owner)"
 

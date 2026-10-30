@@ -4,7 +4,7 @@
 # 2. Analyst lists reviews, previews schema/sample
 # 3. Analyst approves with column classifications (public vs sensitive)
 # 4. Trino creates polaris.raw."steward_eng_<suffix>" and inserts public columns
-# 5. Database status updates to 'registered'
+# 5. Database status goes loading -> 'registered' (the load runs after the 202)
 unset MSYS_NO_PATHCONV || true
 set -eu
 
@@ -60,14 +60,15 @@ CSV
 # 2. Provision Steward Account
 steward_out="$(MSYS_NO_PATHCONV=1 ./scripts/create-password-account.sh "${steward_email}" "Synthetic Steward" 2>&1)"
 steward_pass="$(printf '%s\n' "${steward_out}" | sed -n 's/^ *//; /^[A-Za-z0-9_-]\{16,\}$/p' | tail -1)"
-run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'steward', org_unit = '${test_org_unit}' WHERE email = '${steward_email}'" >/dev/null
+# The uploader is a viewer, naming the org unit per upload (024-three-tiers.sql).
+run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'viewer' WHERE email = '${steward_email}'" >/dev/null
 
 # 3. Steward login and upload
 curl -s -o /dev/null -c "${steward_jar}" -X POST "${portal_base}/auth/password/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${steward_email}\",\"password\":\"${steward_pass}\"}"
 
-upload_res="$(curl -s -w '\n%{http_code}' -b "${steward_jar}" -F "file=@${csv_file}" "${portal_base}/auth/uploads")"
+upload_res="$(curl -s -w '\n%{http_code}' -b "${steward_jar}" -F "orgUnit=${test_org_unit}" -F "file=@${csv_file}" "${portal_base}/auth/uploads")"
 upload_status="$(printf '%s' "${upload_res}" | tail -1)"
 upload_body="$(printf '%s' "${upload_res}" | sed '$d')"
 
@@ -131,11 +132,24 @@ approve_res="$(curl -s -w '\n%{http_code}' -b "${analyst_jar}" -X POST "${portal
 approve_status="$(printf '%s' "${approve_res}" | tail -1)"
 approve_body="$(printf '%s' "${approve_res}" | sed '$d')"
 
-[ "${approve_status}" = "200" ] && pass "analyst approval succeeded" \
-  || fail "analyst approval succeeded" "expected 200, got ${approve_status}: ${approve_body}"
+# The load runs after the answer (026-upload-async-load.sql): 202, then the
+# row moves from loading to registered.
+[ "${approve_status}" = "202" ] && pass "analyst approval accepted" \
+  || fail "analyst approval accepted" "expected 202, got ${approve_status}: ${approve_body}"
 
-# 9. Verify database record
-db_status="$(run_sql_as_owner_tuples "SELECT status FROM identity.upload_event WHERE upload_id = '${upload_id}'" | tr -d '[:space:]')"
+# A second approve while the first is loading is refused.
+again_status="$(curl -s -o /dev/null -w '%{http_code}' -b "${analyst_jar}" -X POST "${portal_base}/auth/reviews/${upload_id}/approve" \
+  -H 'Content-Type: application/json' -d "${approve_payload}")"
+[ "${again_status}" = "409" ] && pass "a second approval is refused" \
+  || fail "a second approval is refused" "expected 409, got ${again_status}"
+
+# 9. Verify database record, once the load has finished
+db_status=""
+for _ in $(seq 1 60); do
+  db_status="$(run_sql_as_owner_tuples "SELECT status FROM identity.upload_event WHERE upload_id = '${upload_id}'" | tr -d '[:space:]')"
+  [ "${db_status}" = "loading" ] || break
+  sleep 2
+done
 [ "${db_status}" = "registered" ] && pass "database record status is registered" \
   || fail "database record status" "expected registered, got '${db_status}'"
 

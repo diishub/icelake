@@ -1,6 +1,6 @@
 #!/bin/sh
 # Asserts the access-tier gate on /auth/embeds/ops, the guest-token route
-# viewer_exec/analyst accounts use to see a Superset dashboard inline instead
+# viewer/analyst/admin accounts use to see a Superset dashboard inline instead
 # of a second Superset login (services/auth/src/server.ts).
 #
 # The full happy path (a real 200 with a working guest token) needs
@@ -47,7 +47,7 @@ status="$(curl -s -o /dev/null -w '%{http_code}' "${portal_base}/auth/embeds/ops
 [ "${status}" = "401" ] && pass "no session is refused" \
   || fail "no session is refused" "expected 401, got ${status}"
 
-echo "provisioning a synthetic steward-tier account (wrong tier for this route)..." >&2
+echo "provisioning a synthetic account with no tier granted (wrong tier for this route)..." >&2
 create_output="$(MSYS_NO_PATHCONV=1 ./scripts/create-password-account.sh "${test_email}" "Synthetic Embed Test" 2>&1)"
 password="$(printf '%s\n' "${create_output}" | sed -n 's/^ *//; /^[A-Za-z0-9_-]\{16,\}$/p' | tail -1)"
 if [ -z "${password}" ]; then
@@ -55,17 +55,17 @@ if [ -z "${password}" ]; then
   echo "${create_output}" >&2
   exit 1
 fi
-run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'steward', org_unit = 'eng' WHERE email = '${test_email}'" >/dev/null
+run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'none' WHERE email = '${test_email}'" >/dev/null
 
 curl -s -o /dev/null -c "${jar}" -X POST "${portal_base}/auth/password/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${test_email}\",\"password\":\"${password}\"}"
 
 status="$(curl -s -o /dev/null -w '%{http_code}' -b "${jar}" "${portal_base}/auth/embeds/ops")"
-[ "${status}" = "403" ] && pass "a tier with no embed permission (steward) is refused" \
-  || fail "a tier with no embed permission (steward) is refused" "expected 403, got ${status}"
+[ "${status}" = "403" ] && pass "a tier with no embed permission (none) is refused" \
+  || fail "a tier with no embed permission (none) is refused" "expected 403, got ${status}"
 
-run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'analyst', org_unit = NULL WHERE email = '${test_email}'" >/dev/null
+run_sql_as_owner "UPDATE identity.app_user SET access_tier = 'analyst' WHERE email = '${test_email}'" >/dev/null
 
 response="$(curl -s -w '\n%{http_code}' -b "${jar}" "${portal_base}/auth/embeds/ops")"
 status="$(printf '%s' "${response}" | tail -1)"

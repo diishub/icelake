@@ -4,7 +4,7 @@ export interface UploadItem {
   originalFilename: string;
   sizeBytes: number;
   uploadedAt: string;
-  status: 'pending_review' | 'registered' | 'rejected';
+  status: 'pending_review' | 'loading' | 'registered' | 'rejected';
   fileKind: 'csv' | 'pdf' | 'docx';
   reviewedByUsername: string | null;
   targetTable: string | null;

@@ -42,7 +42,18 @@ with app.app_context():
     print(len(d.slices) if d else 'missing')
 ")"
 
-check "the control-plane connection impersonates the signed-in user" "True" \
+check "the ops datasets read the platform catalog through PSU Iceberg" "PSU Iceberg:platform" \
+  "$(superset_python "
+from superset.app import create_app
+app = create_app()
+with app.app_context():
+    from superset import db
+    from superset.connectors.sqla.models import SqlaTable
+    found = {f'{t.database.database_name}:{t.catalog}' for t in db.session.query(SqlaTable).filter_by(schema='ingest')}
+    print(','.join(sorted(found)) or 'missing')
+")"
+
+check "the retired PSU Platform Ops database is gone" "missing" \
   "$(superset_python "
 from superset.app import create_app
 app = create_app()
@@ -50,17 +61,28 @@ with app.app_context():
     from superset import db
     from superset.models.core import Database
     x = db.session.query(Database).filter_by(database_name='PSU Platform Ops').one_or_none()
+    print('present' if x else 'missing')
+")"
+
+check "the connection impersonates the signed-in user" "True" \
+  "$(superset_python "
+from superset.app import create_app
+app = create_app()
+with app.app_context():
+    from superset import db
+    from superset.models.core import Database
+    x = db.session.query(Database).filter_by(database_name='PSU Iceberg').one_or_none()
     print(x.impersonate_user if x else 'missing')
 ")"
 
-check "the control-plane connection refuses writes" "False" \
+check "the connection refuses writes" "False" \
   "$(superset_python "
 from superset.app import create_app
 app = create_app()
 with app.app_context():
     from superset import db
     from superset.models.core import Database
-    x = db.session.query(Database).filter_by(database_name='PSU Platform Ops').one_or_none()
+    x = db.session.query(Database).filter_by(database_name='PSU Iceberg').one_or_none()
     print(x.allow_dml if x else 'missing')
 ")"
 

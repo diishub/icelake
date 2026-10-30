@@ -7,27 +7,27 @@ everything else -- with user impersonation on, so the same OPA policy decides
 who may see them. Viewers cannot, by design: run history names source systems
 and tables a report reader has no reason to see.
 
-Idempotent. Re-running reconciles the database, the datasets and the charts
-without duplicating them.
+Superset has one database, PSU Iceberg (bootstrap_database.py, which runs
+first). The datasets here read Trino's `platform` catalog through it, as a
+second catalog on the same connection, rather than through a database of their
+own. The separate "PSU Platform Ops" database this script used to create is
+moved off and removed.
+
+Idempotent. Re-running reconciles the datasets and the charts without
+duplicating them.
 """
 
 import json
-import os
-from urllib.parse import quote
 
 from superset.app import create_app
 
-DATABASE_NAME = "PSU Platform Ops"
+DATABASE_NAME = "PSU Iceberg"
+# Created by earlier versions of this script; its datasets are moved onto
+# DATABASE_NAME and it is then deleted.
+RETIRED_DATABASE_NAME = "PSU Platform Ops"
 DASHBOARD_TITLE = "PSU Platform Operations"
+CATALOG = "platform"
 SCHEMA = "ingest"
-
-TRINO_PASSWORD = os.environ["SUPERSET_TRINO_PASSWORD"]
-
-# Self-signed certificate from this stack: the transport is unverified, the
-# identity is not.
-ENGINE_EXTRA = json.dumps(
-    {"engine_params": {"connect_args": {"http_scheme": "https", "verify": False}}}
-)
 
 # Raw-records tables rather than aggregates: an operator reading this wants the
 # rows, including the ones with an awkward status.
@@ -42,7 +42,9 @@ CHARTS = [
             "last_status",
             "last_success_rows",
             "last_success_started_at",
-            "age_since_last_success",
+            # Hours, not the interval column: Trino cannot read an interval
+            # (config/platform/001-registry.sql).
+            "age_since_last_success_hours",
             "skip_reason",
         ],
         "order_by": '["target_table", true]',
@@ -138,36 +140,41 @@ with app.app_context():
     from superset.models.dashboard import Dashboard
     from superset.models.slice import Slice
 
+    # Impersonation, multi-catalog and the credential are all set on this
+    # connection by bootstrap_database.py; the query still reaches Trino as the
+    # signed-in user, so OPA decides who reads the control plane.
     database = (
         db.session.query(Database).filter_by(database_name=DATABASE_NAME).one_or_none()
     )
     if database is None:
-        database = Database(database_name=DATABASE_NAME)
-        db.session.add(database)
+        raise RuntimeError(f"{DATABASE_NAME} does not exist; bootstrap_database.py must run first")
 
-    # Impersonation is the point: the query reaches Trino as the signed-in
-    # user, so OPA decides, not this connection.
-    database.sqlalchemy_uri = (
-        f"trino://superset:{quote(TRINO_PASSWORD, safe='')}@trino:8443/platform"
+    retired = (
+        db.session.query(Database).filter_by(database_name=RETIRED_DATABASE_NAME).one_or_none()
     )
-    database.extra = ENGINE_EXTRA
-    database.impersonate_user = True
-    database.expose_in_sqllab = True
-    database.allow_ctas = False
-    database.allow_cvas = False
-    database.allow_dml = False
-    db.session.commit()
 
     slices = []
     for chart in CHARTS:
         dataset = (
             db.session.query(SqlaTable)
-            .filter_by(table_name=chart["table"], schema=SCHEMA, database_id=database.id)
+            .filter_by(table_name=chart["table"], catalog=CATALOG, schema=SCHEMA, database_id=database.id)
             .one_or_none()
         )
+        if dataset is None and retired is not None:
+            # Moved rather than recreated, so the dataset keeps its id and the
+            # chart pointing at it keeps working.
+            dataset = (
+                db.session.query(SqlaTable)
+                .filter_by(table_name=chart["table"], schema=SCHEMA, database_id=retired.id)
+                .one_or_none()
+            )
+            if dataset is not None:
+                dataset.database = database
+                dataset.catalog = CATALOG
+                db.session.commit()
         if dataset is None:
             dataset = SqlaTable(
-                table_name=chart["table"], schema=SCHEMA, database=database
+                table_name=chart["table"], catalog=CATALOG, schema=SCHEMA, database=database
             )
             db.session.add(dataset)
             db.session.commit()
@@ -208,6 +215,20 @@ with app.app_context():
     dashboard.published = True
     dashboard.position_json = position_json(slices)
     db.session.commit()
+
+    if retired is not None:
+        if db.session.query(SqlaTable).filter_by(database_id=retired.id).count() > 0:
+            # Something else was built on it by hand; leave it for a person to
+            # look at rather than break it.
+            print(f"kept {RETIRED_DATABASE_NAME}: other datasets still use it")
+        else:
+            try:
+                db.session.delete(retired)
+                db.session.commit()
+                print(f"removed the retired {RETIRED_DATABASE_NAME} database")
+            except Exception as error:  # noqa: BLE001
+                db.session.rollback()
+                print(f"could not remove {RETIRED_DATABASE_NAME}: {type(error).__name__}")
 
     print(
         f"Superset dashboard [{DASHBOARD_TITLE}] is configured with "

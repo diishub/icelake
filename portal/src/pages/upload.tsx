@@ -83,7 +83,7 @@ function UploadWorkspace({ user }: { user: PortalUser }) {
       </div>
 
       <div className="upload-layout">
-        <UploadForm orgUnit={user.orgUnit} onUploaded={() => void fetchUploadHistory()} />
+        <UploadForm onUploaded={() => void fetchUploadHistory()} />
         <UploadHistory uploads={uploads} refreshing={refreshing} onRefresh={() => void fetchUploadHistory()} />
       </div>
     </div>
