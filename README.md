@@ -214,9 +214,37 @@ ssh -L 8085:127.0.0.1:8085 -L 8088:127.0.0.1:8088 <user>@<host>
 ```
 
 Add one `-L` per port needed, then open `http://localhost:<port>` locally.
-A public-facing reverse proxy was evaluated and deliberately dropped for
-this deployment (kept every service loopback-only/SSH-tunnel-only instead)
-— see the git history around 2026-08-31 if that's ever revisited.
+
+### 5.1 Public HTTPS entry (optional)
+
+The `public` Compose profile adds a Caddy reverse proxy
+([config/caddy/Caddyfile](config/caddy/Caddyfile)) that serves only the
+portal (`https://<host>/`) and Superset (`https://<host>:9443/`). Port 80
+redirects to HTTPS. Trino, NiFi, RustFS, Polaris, Qdrant and PostgreSQL stay
+loopback-only and still need the SSH tunnel above. Superset gets its own port
+because it does not work reliably under a URL sub-path.
+
+Caddy uses the certificate PSU issues for the host; it never requests one
+from an ACME CA.
+
+1. Put the certificate chain and key in `runtime/caddy/certs/` as
+   `fullchain.pem` and `privkey.pem` (`chmod 600 privkey.pem`). Never commit
+   them.
+2. Copy `portal/public/config.json` to `runtime/portal/config.json` and change
+   the `reports`, `analytics` and `users` entries to
+   `{ "port": "9443", "protocol": "https:", "path": "...", "public": true }`.
+3. In `.env`, set the block at the end of `.env.example`:
+   `COMPOSE_PROFILES=public`, `SUPERSET_BEHIND_PROXY=true`,
+   `PORTAL_CONFIG_FILE=./runtime/portal/config.json`,
+   `AUTH_PUBLIC_ORIGIN=https://<host>` and
+   `SUPERSET_EMBED_ORIGIN=https://<host>:9443`. If PSU Passport is on, register
+   `https://<host>/auth/callback` as its redirect URI.
+4. Apply: `docker compose up -d --build psu-portal && docker compose up -d`.
+   `superset-init` reruns and re-registers the embed allowed origin.
+5. Open TCP 80, 443 and 9443 inbound on the network firewall for the host.
+
+Everything reachable this way relies on the portal's and Superset's own
+sign-in. Keep the admin passwords strong and do not enable self-registration.
 
 ## 6. First walkthrough
 

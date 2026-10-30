@@ -7,7 +7,7 @@
 # really does engage over HTTP.
 #
 # Requires: docker compose --profile auth up -d psu-auth, and nginx already
-# proxying /auth/ (config/portal/default.conf). Skips itself rather than
+# proxying /auth/ (config/portal/default.conf.template). Skips itself rather than
 # failing when psu-auth is not running, since it is behind a profile and a
 # fresh checkout does not have it up by default.
 #

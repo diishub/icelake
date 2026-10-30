@@ -15,6 +15,8 @@ export interface ServiceLink {
   port: string;
   protocol: 'http:' | 'https:';
   path: string;
+  /** Reachable from off-host (behind the "public" proxy), not only via SSH tunnel. */
+  public?: boolean;
 }
 
 export type ServiceName = 'reports' | 'analytics' | 'users' | 'ingestion' | 'query' | 'vectors' | 'storage';

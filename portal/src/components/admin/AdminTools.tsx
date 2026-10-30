@@ -45,7 +45,10 @@ export function AdminTools() {
         {local === false ? <p className="login-note login-note-warning">{t('admin.hostNotice')}</p> : null}
         <div className="operator-grid">
           {TOOLS.map((tool) => {
-            const url = local ? buildServiceUrl(config, tool.service) : null;
+            // A service marked public is fronted by the proxy on this same host
+            // name, so its link works wherever the page was opened.
+            const reachable = local || (local === false && config.services?.[tool.service]?.public === true);
+            const url = reachable ? buildServiceUrl(config, tool.service) : null;
             const body = (
               <>
                 <strong>{t(tool.title)}</strong>
