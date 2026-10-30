@@ -4,7 +4,7 @@ import type { NextConfig } from 'next';
  * The portal is built to static files (`out/`) and served by nginx, exactly as
  * the hand-written HTML portal was: no Node process runs in production, and
  * nginx keeps owning the CSP, the cache headers and the /auth proxy
- * (config/portal/default.conf).
+ * (config/portal/default.conf.template).
  *
  * Pages Router rather than App Router on purpose: a static App Router export
  * ships its page data as inline <script> pushes, which the portal's

@@ -1,0 +1,38 @@
+# Public HTTPS entry for the two services this deployment exposes beyond the
+# host: the PSU Data Hub portal and Superset. Everything else (Trino, NiFi,
+# RustFS console, Polaris, Qdrant, Postgres) stays loopback-only -- reach those
+# through an SSH tunnel, not through this proxy (README §5).
+#
+# Only started with the "public" Compose profile. The certificate is the one
+# PSU issues for this host, mounted read-only at /certs; Caddy never asks an
+# ACME CA for one, because the host name is not one a public CA will issue for
+# and the VM may not be reachable from the internet on port 80.
+#
+# Superset gets its own port rather than a URL sub-path: Superset behind a
+# sub-path is not reliably supported upstream (broken static assets and
+# redirects even with ENABLE_PROXY_FIX + x_prefix).
+
+{
+	auto_https off
+	admin off
+}
+
+(psu_tls) {
+	tls /certs/fullchain.pem /certs/privkey.pem
+	header Strict-Transport-Security "max-age=31536000"
+	header -Server
+}
+
+http://:80 {
+	redir https://{host}{uri} permanent
+}
+
+https://:443 {
+	import psu_tls
+	reverse_proxy psu-portal:80
+}
+
+https://:{$SUPERSET_PUBLIC_PORT:9443} {
+	import psu_tls
+	reverse_proxy superset:8088
+}
