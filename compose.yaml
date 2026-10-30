@@ -690,7 +690,15 @@ services:
     volumes:
       # PORTAL_CONFIG_FILE lets a deployment (e.g. the "public" profile, whose
       # Superset links are https on another port) keep its own copy outside git.
-      - ${PORTAL_CONFIG_FILE:-./portal/public/config.json}:/usr/share/nginx/html/config.json:ro
+      # create_host_path: false -- a missing file fails the start with "bind
+      # source path does not exist" instead of Docker creating a root-owned
+      # directory in its place, which then has to be removed with root.
+      - type: bind
+        source: ${PORTAL_CONFIG_FILE:-./portal/public/config.json}
+        target: /usr/share/nginx/html/config.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ./portal/public/data:/usr/share/nginx/html/data:ro
       - ./config/portal/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:
@@ -713,7 +721,12 @@ services:
       - "${SUPERSET_PUBLIC_PORT:-9443}:${SUPERSET_PUBLIC_PORT:-9443}"
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${PUBLIC_TLS_DIR:-./runtime/caddy/certs}:/certs:ro
+      - type: bind
+        source: ${PUBLIC_TLS_DIR:-./runtime/caddy/certs}
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
       - ./runtime/caddy/data:/data
       - ./runtime/caddy/config:/config
     depends_on:
